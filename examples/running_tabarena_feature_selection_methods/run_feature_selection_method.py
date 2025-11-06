@@ -32,7 +32,7 @@ y_test = test_data["class"]
 print(f"Running TabArena model {model_to_run} on task type {task_type}...")
 feature_generator, label_cleaner = (
     AutoMLPipelineFeatureGenerator(
-        post_generators=[FeatureSelectionGenerator("Boruta")]
+        post_generators=[FeatureSelectionGenerator("MAFESE")]
         # enable_feature_selection="Boruta"  # -> Validation accuracy: 0.8538376884293502
         # enable_feature_selection="Select_k_Best_Chi2"  # -> Validation accuracy: 0.8317764184987075
         # enable_feature_selection=True  # -> Validation accuracy: 0.8317764184987075
