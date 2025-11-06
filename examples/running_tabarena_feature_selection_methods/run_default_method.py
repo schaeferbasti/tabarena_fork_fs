@@ -29,11 +29,15 @@ y_test = test_data["class"]
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
 print(f"Running TabArena model {model_to_run} on task type {task_type}...")
 feature_generator, label_cleaner = (
-    AutoMLPipelineFeatureGenerator(),
+    AutoMLPipelineFeatureGenerator(
+        # enable_feature_selection="Select_k_Best_Chi2"  # -> Validation accuracy: 0.8317764184987075
+        enable_feature_selection=True  # -> Validation accuracy: 0.8317764184987075
+        # enable_feature_selection=False  # -> Validation accuracy: 0.8754126890691782
+    ),
     LabelCleaner.construct(problem_type=task_type, y=y_train),
 )
 X_train, y_train = (
-    feature_generator.fit_transform(X_train),
+    feature_generator.fit_transform(X_train, y_train),
     label_cleaner.transform(y_train),
 )
 X_test, y_test = feature_generator.transform(X_test), label_cleaner.transform(y_test)
