@@ -31,7 +31,7 @@ y_test = test_data["class"]
 method = "MetaFS"
 
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
-print(f"Running TabArena Feature Selection Method {method}")
+print(f"Running TabArena Feature Selection Method: {method}")
 feature_generator, label_cleaner = (
     AutoMLPipelineFeatureGenerator(
         post_generators=[FeatureSelectionGenerator(method)]
