@@ -65,7 +65,7 @@ def plot_leaderboards(methods, results, task):
         model_names = sorted_leaderboard['model'].values
         scores_all = sorted_leaderboard['score_test'].values
         ax2.plot(model_names, scores_all, marker='o', label=method, linewidth=2, markersize=6)
-    ax2.set_title('Model Scores per Feature Selection Method (Sorted by Model Name)')
+    ax2.set_title('Model Test Scores per Feature Selection Method')
     ax2.set_ylabel(task.eval_metric)
     ax2.set_xlabel('Models')
     ax2.tick_params(axis='x', rotation=90)
