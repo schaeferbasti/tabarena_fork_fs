@@ -25,7 +25,7 @@ class MetaFeatureSelector(AbstractFeatureGenerator):
         self._y = y
 
         from tabarena.benchmark.feature_selection_methods.ag.metafs.method.MetaFS import MetaFS
-        self._metafs_kwargs = {"time_limit": 1800, "memory_limit": 64000, "model": "LightGBM_BAG_L1"}
+        self._metafs_kwargs = {"time_limit": 300, "memory_limit": 16000, "model": "LightGBM_BAG_L1"}
         self._metafs = MetaFS(**self._metafs_kwargs)
 
         X_out = self._metafs.fit_transform(X, y)
@@ -41,17 +41,6 @@ class MetaFeatureSelector(AbstractFeatureGenerator):
         else:
             X_out = X[self._selected_features].copy()
         return X_out
-
-
-    @staticmethod
-    def _get_dataset_metadata(X: DataFrame, y: Series) -> dict:
-        """
-        Extract dataset metadata needed by MetaFS.
-        Adapt this based on what metadata your MetaFS code requires.
-        """
-        dataset_metadata = {"task_id": 2, "task_type": "Multiclass", "number_of_classes": 'N/A'}
-
-        return dataset_metadata
 
     @staticmethod
     def get_default_infer_features_in_args() -> dict:

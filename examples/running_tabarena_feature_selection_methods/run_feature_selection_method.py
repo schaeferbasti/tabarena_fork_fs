@@ -28,11 +28,13 @@ y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
+method = "MetaFS"
+
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
-print(f"Running TabArena model {model_to_run} on task type {task_type}...")
+print(f"Running TabArena Feature Selection Method {method}")
 feature_generator, label_cleaner = (
     AutoMLPipelineFeatureGenerator(
-        post_generators=[FeatureSelectionGenerator("MetaFS")]
+        post_generators=[FeatureSelectionGenerator(method)]
         # MetaFS -> Validation accuracy: 0.8530954879328436
         # MAFESE -> Validation accuracy: 0.8468507665139611
         # Boruta -> Validation accuracy: 0.8538376884293502
