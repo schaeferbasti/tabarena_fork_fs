@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import time
 import pandas as pd
-from multiprocessing import Value
-import ctypes
 
 from autogluon.tabular.models import CatBoostModel
 from tabarena.benchmark.feature_selection_methods.ag.metafs.method.Add_Pandas_Metafeatures import add_pandas_metadata_selection_columns
@@ -20,14 +17,12 @@ class MetaFS:
         self.memory_limit = memory_limit
         self.model = model
         self.dataset_id = 146820
-        self.merge_keys = ["dataset - id", "feature - name", "operator", "model", "improvement"]
-        self.last_reset_time = Value(ctypes.c_double, time.time())
         self._selected_features = None
 
 
     def fit_transform(self, X_train: pd.DataFrame, y_train: pd.Series) -> pd.DataFrame:
-        dataset_metadata = self._extract_metadata(X_train, y_train)
-        result = self._run_with_limits(self._fit_transform_internal, X_train, y_train, self.model, dataset_metadata, None, self.dataset_id)
+        dataset_metadata = self._extract_metadata(y_train)
+        result = self._run_with_limits(self._fit_transform_internal, X_train, y_train, self.model, dataset_metadata, self.dataset_id)
 
         if result is None:
             self._selected_features = list(X_train.columns)
@@ -44,7 +39,7 @@ class MetaFS:
         return X[self._selected_features]
 
 
-    def _fit_transform_internal(self, X_train, y_train, model, dataset_metadata, category_to_drop, dataset_id):
+    def _fit_transform_internal(self, X_train, y_train, model, dataset_metadata, dataset_id):
         result_matrix = pd.read_parquet("../../tabarena/benchmark/feature_selection_methods/ag/metafs/method/Pandas_Matrix_Complete.parquet")
         datasets = pd.unique(result_matrix["dataset - id"]).tolist()
         if dataset_id in datasets:
@@ -58,7 +53,7 @@ class MetaFS:
         if X_train_new.equals(X_train):
             return X_train_new, y_train_new
         else:
-            return self._fit_transform_internal(X_train_new, y_train_new, model, dataset_metadata, category_to_drop, dataset_id)
+            return self._fit_transform_internal(X_train_new, y_train_new, model, dataset_metadata, dataset_id)
 
 
     def predict_improvement(self, result_matrix, comparison_result_matrix, X_train, y_train):
@@ -82,7 +77,6 @@ class MetaFS:
         return X_train, y_train
 
 
-
     @staticmethod
     def remove_feature(X_train, y_train, prediction_result):
         worst_feature_row = prediction_result.loc[prediction_result['predicted_improvement'].idxmin()]
@@ -94,6 +88,7 @@ class MetaFS:
         else:
             print(f"Warning: Feature '{worst_feature_name}' not found in X.")
         return X_train, y_train
+
 
     @staticmethod
     def create_empty_core_matrix_for_dataset(X_train, model, dataset_id) -> pd.DataFrame:
@@ -107,11 +102,11 @@ class MetaFS:
             comparison_result_matrix = pd.concat([comparison_result_matrix, pd.DataFrame(new_rows)], ignore_index=True)
         return comparison_result_matrix
 
+
     @staticmethod
-    def _extract_metadata(X: pd.DataFrame, y: pd.Series) -> dict:
+    def _extract_metadata(y: pd.Series) -> dict:
         n_classes = y.nunique()
-        # Task type classification logic
-        if n_classes < 200:  # You can adjust this threshold
+        if n_classes < 200:
             task_type = "Supervised Classification"
         else:
             task_type = "Supervised Regression"
@@ -120,6 +115,7 @@ class MetaFS:
             "task_type": task_type,
             "number_of_classes": 'N/A'
         }
+
 
     def _run_with_limits(self, target_func, *args):
         import signal
@@ -136,12 +132,3 @@ class MetaFS:
         except TimeoutError as e:
             print(f"[MetaFS] {e}")
             return None
-
-
-def _metafs_worker(queue, func, *args):
-    try:
-        result = func(*args)
-        queue.put(result)
-    except Exception as e:
-        print(f"[MetaFS] Error in subprocess: {e}")
-        queue.put(None)
