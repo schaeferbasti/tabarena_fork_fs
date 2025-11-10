@@ -69,8 +69,8 @@ class LS_Flip:
         best_indices = feature_indices
         while not termination_condition:
             list_of_feature_indices = self.get_flip_indices(feature_indices)
+            print(list_of_feature_indices)
             for feature_indices in list_of_feature_indices:
-                print(feature_indices)
                 feature_mask = [bool(i) for i in feature_indices]
                 X_train_selection = X_train.iloc[:, feature_mask]
                 score = self.evaluate_subset(X_train_selection, y_train, dataset_id, task_type, model_name, score_name, repeat)
