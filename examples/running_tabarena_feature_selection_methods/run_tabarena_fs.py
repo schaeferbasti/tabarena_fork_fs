@@ -23,7 +23,6 @@ def main():
 
         # Load if exists
         if os.path.exists(leaderboard_path):
-            print(f"✓ Loaded cached leaderboard for {method}")
             leaderboard = pd.read_parquet(leaderboard_path)
         else:
             predictor = TabularPredictor(
