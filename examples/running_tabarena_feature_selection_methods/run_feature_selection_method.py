@@ -28,7 +28,7 @@ y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
-method = "MetaFS"
+method = "LS_Flip"
 
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
 print(f"Running TabArena Feature Selection Method: {method}")
@@ -38,6 +38,7 @@ feature_generator, label_cleaner = (
         # MetaFS -> Validation accuracy: 0.8530954879328436
         # MAFESE -> Validation accuracy: 0.8468507665139611
         # Boruta -> Validation accuracy: 0.8538376884293502
+        # LS_Flip -> Validation accuracy: 0.8316228597752924
         # Select_k_Best_Chi2 -> Validation accuracy: 0.8317764184987075
         # No Feature Selection -> Validation accuracy: 0.8754126890691782
     ),

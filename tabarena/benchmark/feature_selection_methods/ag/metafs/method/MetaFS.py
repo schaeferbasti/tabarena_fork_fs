@@ -20,13 +20,14 @@ class MetaFS:
         self._selected_features = None
 
 
-    def fit_transform(self, X_train: pd.DataFrame, y_train: pd.Series) -> pd.DataFrame:
-        dataset_metadata = self._extract_metadata(y_train)
-        result = self._run_with_limits(self._fit_transform_internal, X_train, y_train, self.model, dataset_metadata, self.dataset_id)
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+        self._y = y
+        dataset_metadata = self._extract_metadata(y)
+        result = self._run_with_limits(self._fit_transform_internal, X, y, self.model, dataset_metadata, self.dataset_id)
 
         if result is None:
-            self._selected_features = list(X_train.columns)
-            return X_train
+            self._selected_features = list(X.columns)
+            return X
 
         X_selected, y_selected = result
         self._selected_features = list(X_selected.columns)
@@ -35,7 +36,7 @@ class MetaFS:
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self._selected_features is None:
-            raise ValueError("MetaFS must be fitted before transform.")
+            self.fit_transform(X, self._y)
         return X[self._selected_features]
 
 

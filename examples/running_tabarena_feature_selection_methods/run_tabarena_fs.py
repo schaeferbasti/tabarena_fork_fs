@@ -13,7 +13,7 @@ def main():
     task = OpenMLTaskWrapper.from_task_id(task_id=task_id)
 
     results = {}
-    methods = ["MetaFS", "Boruta", "Select_k_Best_Chi2", "Original", "MAFESE"]
+    methods = ["MetaFS", "Boruta", "Select_k_Best_Chi2", "Original", "MAFESE", "LS_Flip"]
 
     for method in methods:
 
@@ -35,7 +35,7 @@ def main():
                 train_data=train_data,
                 # presets="best",  # uncomment for a longer run
                 _feature_generator_kwargs={
-                        "post_generators": [FeatureSelectionGenerator()],
+                        "post_generators": [FeatureSelectionGenerator(method)],
                     }
             )
 

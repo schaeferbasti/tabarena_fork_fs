@@ -13,9 +13,9 @@ from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.svm import SVC, SVR
 
-from src.utils.Autogluon_MultilabelPredictor import MultilabelPredictor
-from src.utils.preprocess_data import factorize_features, factorize_target
-from src.utils.tabrepo_2024_custom import zeroshot2024
+from ....metafs.method.utils.Autogluon_MultilabelPredictor import MultilabelPredictor
+from ....metafs.method.utils.preprocess_data import factorize_features, factorize_target
+from ....metafs.method.utils.tabrepo_2024_custom import zeroshot2024
 
 
 def run_default_lgbm(X_train, y_train, X_test, y_test):
