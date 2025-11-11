@@ -13,8 +13,8 @@ from tabarena.benchmark.feature_selection_methods.ag.metafs.method.utils.run_mod
 warnings.filterwarnings('ignore')
 
 
-class LS_Flip:
-    """LS feature selector (only flip) with resource limits."""
+class LS_FlipSwap:
+    """LS feature selector (flip and swap) with resource limits."""
 
     def __init__(self, time_limit: int = 300, memory_limit: int = 16000, model: str = 'LightGBM_BAG_L1'):
         self.time_limit = time_limit
@@ -103,12 +103,24 @@ class LS_Flip:
     def get_flip_indices(feature_indices):
         list_of_feature_indices = []
         print("Indices: " + str(feature_indices))
+        # Flipping
         for idx, val in enumerate(feature_indices):
             new_feature_indices = feature_indices.copy()
             new_feature_indices[idx] = abs(1 - val)  # flip 0 to 1 or 1 to 0
             # Only add if at least one feature is selected (not all zeros)
             if sum(new_feature_indices) > 0:
                 list_of_feature_indices.append(new_feature_indices)
+
+        # Swapping
+        for idx1 in range(len(feature_indices)):
+            for idx2 in range(idx1 + 1, len(feature_indices)):
+                new_feature_indices = feature_indices.copy()
+                # Swap values at idx1 and idx2
+                new_feature_indices[idx1], new_feature_indices[idx2] = new_feature_indices[idx2], new_feature_indices[
+                    idx1]
+                # Only add if at least one feature is selected (not all zeros)
+                if sum(new_feature_indices) > 0:
+                    list_of_feature_indices.append(new_feature_indices)
         return list_of_feature_indices
 
 

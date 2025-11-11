@@ -28,7 +28,7 @@ y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
-method = "LS_Flip"
+method = "EnumerationFeatureSelector"
 
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
 print(f"Running TabArena Feature Selection Method: {method}")

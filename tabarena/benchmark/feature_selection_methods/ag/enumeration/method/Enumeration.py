@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
+from itertools import combinations
+
 import pandas as pd
 
 import warnings
@@ -13,8 +14,8 @@ from tabarena.benchmark.feature_selection_methods.ag.metafs.method.utils.run_mod
 warnings.filterwarnings('ignore')
 
 
-class LS_Flip:
-    """LS feature selector (only flip) with resource limits."""
+class Enumerator:
+    """Enumerator with resource limits."""
 
     def __init__(self, time_limit: int = 300, memory_limit: int = 16000, model: str = 'LightGBM_BAG_L1'):
         self.time_limit = time_limit
@@ -52,64 +53,60 @@ class LS_Flip:
     def _fit_transform_internal(self, X_train, y_train, dataset_id):
         feature_names = X_train.columns.tolist()
         init_feature_choice = [0] * len(X_train.columns)
-        feature_indices = self.get_ls_indices(X_train, y_train, dataset_id, self.task_type, self.model, self.score, self.repeat, init_feature_choice)
-        selected_feature_names = [feature_names[i] for i, flag in enumerate(feature_indices) if flag == 1]
+        feature_indices = self.get_ls_indices(X_train, y_train, dataset_id, self.task_type, self.model, self.score,
+                                              self.repeat, init_feature_choice)
+
+        # Evaluate all combinations and get the best
+        best_indices = self.evaluate_all_combinations(X_train, y_train, dataset_id, self.task_type, self.model,
+                                                      self.score, self.repeat, feature_indices)
+
+        selected_feature_names = [feature_names[i] for i, flag in enumerate(best_indices) if flag == 1]
         X_train_new = pd.DataFrame(X_train, columns=selected_feature_names, index=X_train.index)
         return X_train_new, y_train
 
+    def get_ls_indices(self, X_train, y_train, dataset_id, task_type, model_name, score_name, repeat, feature_indices):
+        n_features = X_train.shape[1]
+        all_combinations_list = []
 
-    def get_ls_indices(self, X_train, y_train, dataset_id, task_type, model_name, score_name, repeat,
-                       feature_indices):
-        termination_condition = False
+        for selected_n_features in range(1, n_features + 1):
+            for feature_combo in combinations(range(n_features), selected_n_features):
+                # Convert tuple to binary list (0s and 1s)
+                binary_indices = [0] * n_features
+                for idx in feature_combo:
+                    binary_indices[idx] = 1
+                all_combinations_list.append(binary_indices)
+
+        return all_combinations_list
+
+    def evaluate_all_combinations(self, X_train, y_train, dataset_id, task_type, model_name, score_name, repeat,
+                                  all_combinations):
         direction = self.get_metric_direction(score_name)
-        if direction == "higher":
-            best_score = -np.inf
-        else:
-            best_score = np.inf
-        best_indices = feature_indices
-        while not termination_condition:
-            list_of_feature_indices = self.get_flip_indices(feature_indices)
-            print(list_of_feature_indices)
-            improvement_found = False
-            for feature_indices in list_of_feature_indices:
-                feature_mask = [bool(i) for i in feature_indices]
-                X_train_selection = X_train.iloc[:, feature_mask]
-                score = self.evaluate_subset(X_train_selection, y_train, dataset_id, task_type, model_name, score_name, repeat)
-                if direction == "higher":
-                    if score > best_score:
-                        best_score = score
-                        best_indices = feature_indices
-                        improvement_found = True
-                else:  # lower
-                    if score < best_score:
-                        best_score = score
-                        best_indices = feature_indices
-                        improvement_found = True
-            feature_indices = best_indices
-            all_ones = all(i == 1 for i in feature_indices)
-            if all_ones or not improvement_found:
-                termination_condition = True
-        return best_indices
+        best_score = float('-inf') if direction == "higher" else float('inf')
+        best_indices = None
 
+        for feature_indices in all_combinations:
+            print(feature_indices)
+            feature_mask = [bool(i) for i in feature_indices]
+            X_train_selection = X_train.iloc[:, feature_mask]
+            score = self.evaluate_subset(X_train_selection, y_train, dataset_id, task_type, model_name, score_name,
+                                         repeat)
+
+            if direction == "higher":
+                if score > best_score:
+                    best_score = score
+                    best_indices = feature_indices
+            else:  # lower
+                if score < best_score:
+                    best_score = score
+                    best_indices = feature_indices
+
+        return best_indices
 
     def get_metric_direction(self, score_name):
         if score_name in self.HIGHER_BETTER:
             return "higher"
         else:
             return "lower"
-
-
-    @staticmethod
-    def get_flip_indices(feature_indices):
-        list_of_feature_indices = []
-        print("Indices: " + str(feature_indices))
-        for idx, val in enumerate(feature_indices):
-            new_feature_indices = feature_indices.copy()
-            new_feature_indices[idx] = abs(1 - val)  # flip 0 to 1 or 1 to 0
-            # Only add if at least one feature is selected (not all zeros)
-            if sum(new_feature_indices) > 0:
-                list_of_feature_indices.append(new_feature_indices)
-        return list_of_feature_indices
 
 
     @staticmethod
