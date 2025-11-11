@@ -5,8 +5,8 @@ from __future__ import annotations
 from autogluon.common import TabularDataset
 from autogluon.core.data import LabelCleaner
 from autogluon.core.models import BaggedEnsembleModel
-from autogluon.features import FeatureSelectionGenerator
 from autogluon.features.generators import AutoMLPipelineFeatureGenerator
+from autogluon.features.generators.selection import FeatureSelectionGenerator
 
 from tabarena.models.utils import get_configs_generator_from_name
 
@@ -38,7 +38,7 @@ feature_generator, label_cleaner = (
         # MetaFS -> Validation accuracy: 0.8530954879328436
         # MAFESE -> Validation accuracy: 0.8468507665139611
         # Boruta -> Validation accuracy: 0.8538376884293502
-        # LS_Flip -> Validation accuracy: 0.8316228597752924
+        # LS_Flip -> Validation accuracy: 0.8538376884293502
         # Select_k_Best_Chi2 -> Validation accuracy: 0.8317764184987075
         # No Feature Selection -> Validation accuracy: 0.8754126890691782
     ),
