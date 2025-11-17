@@ -13,7 +13,7 @@ class LocalSearchFeatureSelector_FlipSwap(AbstractFeatureGenerator):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._ls_flip = None
+        self._ls_flipswap = None
         self._y = None
         self._selected_features = None
 
@@ -21,10 +21,10 @@ class LocalSearchFeatureSelector_FlipSwap(AbstractFeatureGenerator):
     def _fit_transform(self, X: DataFrame, y: Series, **kwargs) -> tuple[DataFrame, dict]:
         self._y = y
 
-        self._ls_flip_kwargs = {}
-        from tabarena.benchmark.feature_selection_methods.ag.ls_flip.method.LS_Flip import LS_Flip
-        self._ls_flip = LS_Flip(**self._ls_flip_kwargs)
-        X_out = self._ls_flip.fit_transform(X, y)
+        self._ls_flipswap_kwargs = {}
+        from tabarena.benchmark.feature_selection_methods.ag.ls_flipswap.method.LS_FlipSwap import LS_FlipSwap
+        self._ls_flipswap = LS_FlipSwap(**self._ls_flipswap_kwargs)
+        X_out = self._ls_flipswap.fit_transform(X, y)
 
         selected_features = list(X_out.columns)
         self.feature_metadata_in.keep_features(selected_features, inplace=True)
@@ -35,9 +35,9 @@ class LocalSearchFeatureSelector_FlipSwap(AbstractFeatureGenerator):
 
     def _transform(self, X: DataFrame, *, is_train: bool = False) -> DataFrame:
         if is_train:
-            X = self._ls_flip.fit_transform(X, self._y)
+            X = self._ls_flipswap.fit_transform(X, self._y)
         else:
-            X = self._ls_flip.transform(X)
+            X = self._ls_flipswap.transform(X)
         return X
 
 

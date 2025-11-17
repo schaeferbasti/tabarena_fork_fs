@@ -121,6 +121,7 @@ class LS_FlipSwap:
                 # Only add if at least one feature is selected (not all zeros)
                 if sum(new_feature_indices) > 0:
                     list_of_feature_indices.append(new_feature_indices)
+        list_of_feature_indices = [i for i in list_of_feature_indices if i != feature_indices]
         return list_of_feature_indices
 
 
