@@ -7,6 +7,8 @@ from typing import Any
 
 import openml
 
+from tabarena.benchmark.feature_selection_methods.feature_selection_methods_register import PREPROCESSING_METHODS
+
 
 def setup_slurm_job(
     *,
@@ -67,6 +69,7 @@ def setup_slurm_job(
 def run_experiment(
     *,
     task_id: str,
+    fs_method: str,
     fold: int,
     repeat: int,
     configs_yaml_file: str,
@@ -125,6 +128,7 @@ def run_experiment(
     yaml_out = YamlExperimentSerializer.load_yaml(path=configs_yaml_file)
     methods = []
     for m_i, method in enumerate(yaml_out):
+        print("My method: " + str(method))
         if (config_index is not None) and (m_i not in config_index):
             continue
 
@@ -150,16 +154,9 @@ def run_experiment(
         methods.append(YamlSingleExperimentSerializer.parse_method(method))
 
     for m_i in range(len(methods)):
-        preprocessing_name = methods[m_i].method_kwargs.pop(
-            "preprocessing_pipeline", None
-        )
-
+        preprocessing_name = fs_method  # methods[m_i].method_kwargs.pop("preprocessing_pipeline", None)
         if preprocessing_name is not None:
             print("Adding preprocessing to the config:", preprocessing_name)
-            from tabarena.benchmark.feature_selection_methods.feature_selection_methods_register import (
-                PREPROCESSING_METHODS,
-            )
-
             methods[m_i] = PREPROCESSING_METHODS[preprocessing_name](methods[m_i])
 
     results_lst: dict[str, Any] = run_experiments_new(
@@ -192,9 +189,21 @@ if __name__ == "__main__":
     # TODO: provide defaults or a default CLI command to run this.
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--task_id", type=str, required=True, help="OpenML Task ID for the task to run."
+        "--task_id",
+        type=str,
+        required=True,
+        help="OpenML Task ID for the task to run."
     )
-    parser.add_argument("--fold", type=int, required=True, help="Fold of CV to run.")
+    parser.add_argument(
+        "--fs_method",
+        type=str,
+        required=True,
+        help="Feature Selection Method to use.")
+    parser.add_argument(
+        "--fold",
+        type=int,
+        required=True,
+        help="Fold of CV to run.")
     parser.add_argument(
         "--repeat",
         type=int,
@@ -216,10 +225,14 @@ if __name__ == "__main__":
 
     # TODO: improve usage, but required for a good setup
     parser.add_argument(
-        "--openml_cache_dir", type=str, help="Path to the OpenML cache directory."
+        "--openml_cache_dir",
+        type=str,
+        help="Path to the OpenML cache directory."
     )
     parser.add_argument(
-        "--tabrepo_cache_dir", type=str, help="Path to the TabRepo cache directory."
+        "--tabrepo_cache_dir",
+        type=str,
+        help="Path to the TabRepo cache directory."
     )
     parser.add_argument(
         "--output_dir",
@@ -227,13 +240,19 @@ if __name__ == "__main__":
         help="Path to the output directory where the results will be saved.",
     )
     parser.add_argument(
-        "--num_cpus", type=int, help="Number of CPUs to use for the experiment."
+        "--num_cpus",
+        type=int,
+        help="Number of CPUs to use for the experiment."
     )
     parser.add_argument(
-        "--num_gpus", type=int, help="Number of GPUs to use for the experiment."
+        "--num_gpus",
+        type=int,
+        help="Number of GPUs to use for the experiment."
     )
     parser.add_argument(
-        "--memory_limit", type=int, help="Memory limit to use for the experiment."
+        "--memory_limit",
+        type=int,
+        help="Memory limit to use for the experiment."
     )
     parser.add_argument(
         "--setup_ray_for_slurm_shared_resources_environment",
@@ -269,6 +288,7 @@ if __name__ == "__main__":
         run_experiment(
             config_index=args.config_index,
             task_id=args.task_id,
+            fs_method=args.fs_method,
             fold=args.fold,
             repeat=args.repeat,
             configs_yaml_file=args.configs_yaml_file,
@@ -284,4 +304,4 @@ if __name__ == "__main__":
             shutil.rmtree(ray_temp_dir)
 
 
-# python3 run_tabarena_fs.py --task_id 146818 --fold 0 --repeat 0 --configs_yaml_file ../../tabflow/configs/method_configs.yaml --openml_cache_dir ./openml_cache/ --tabrepo_cache_dir ./tabrepo_cache/ --output_dir ./results/ --num_cpus 4 --num_gpus 0 --memory_limit 16000 --ignore_cache False --sequential_local_fold_fitting True
+# python3 run_tabarena_fs.py --task_id 146818 --fs_method Boruta --fold 0 --repeat 0 --configs_yaml_file ../../tabflow/configs/method_configs.yaml --openml_cache_dir ./openml_cache/ --tabrepo_cache_dir ./tabrepo_cache/ --output_dir ./results/ --num_cpus 4 --num_gpus 0 --memory_limit 16000 --ignore_cache False --sequential_local_fold_fitting True
