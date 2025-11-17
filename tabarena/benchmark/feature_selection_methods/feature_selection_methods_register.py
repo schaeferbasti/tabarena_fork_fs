@@ -28,6 +28,31 @@ def get_default_encoding_pipeline():
     }
 
 
+def get_fs_pipeline(fs_method):
+    """Return the pipeline for encoding non-numerical or categorical data and doing feature selection.
+
+        The default pipeline handles:
+            - Text Features
+            - Date Time Features
+
+        Text features are used to generate semantic and statistical embeddings.
+        """
+    from autogluon.features.generators import (
+        AsTypeFeatureGenerator,
+        FillNaFeatureGenerator,
+    )
+    from autogluon.features.generators.selection import FeatureSelectionGenerator
+    return {
+        # Use default pre-generators but disabled conversion of bool features.
+        "pre_generators": [
+            AsTypeFeatureGenerator(convert_bool=False),
+            FillNaFeatureGenerator(),
+        ],
+        "pre_enforce_types": False,
+        "post_generators": [FeatureSelectionGenerator(fs_method)]
+    }
+
+
 def get_dimensionality_reduction_pipeline():
     from autogluon.features.generators.identity import IdentityFeatureGenerator
     return [
@@ -40,44 +65,51 @@ def get_dimensionality_reduction_pipeline():
     ]
 
 
-def default_feature_selection(experiment):
+def no_feature_selection(experiment):
     default_pipeline = get_default_encoding_pipeline()
-
-    # Add pipeline to experiment
-    new_experiment = deepcopy(experiment)
-    new_experiment.method_kwargs["fit_kwargs"][
-        "_feature_selector_kwargs"
-    ] = default_pipeline
-
-    return new_experiment
-
-
-def default_model_specific_pca(experiment):
-    default_pipeline = get_default_encoding_pipeline()
-    dr_pipeline = get_dimensionality_reduction_pipeline()
-
-    # Add default pipeline to experiment
     new_experiment = deepcopy(experiment)
     new_experiment.method_kwargs["fit_kwargs"][
         "_feature_generator_kwargs"
     ] = default_pipeline
-
-    # new_experiment.method_kwargs["init_kwargs"]["verbosity"] = 4
-
-    # Add model-specific dimensionality reduction to experiment
-    hps = new_experiment.method_kwargs["model_hyperparameters"]
-    # TODO: figure out if this generalizes to having experiments with multiple models?
-    #   ... and figure out if experiments with multiple models even exist
-    # set to a large number such that max_features filter does not trigger before PCA
-    hps["ag.model_specific_feature_generator_kwargs"] = {
-        "feature_generators": [dr_pipeline],
-    }
-    new_experiment.method_kwargs["model_hyperparameters"] = hps
     return new_experiment
 
 
-DEFAULT_PIPELINE_WITH_FEATURE_SELECTION = "D-PRE-FS_DR"
+def get_lsflip_feature_selection(experiment):
+    pipeline = get_fs_pipeline("LS_Flip")
+    new_experiment = deepcopy(experiment)
+    new_experiment.method_kwargs["fit_kwargs"][
+        "_feature_generator_kwargs"
+    ] = pipeline
+    return new_experiment
+
+
+def get_lsflipswap_feature_selection(experiment):
+    pipeline = get_fs_pipeline("LS_FlipSwap")
+    new_experiment = deepcopy(experiment)
+    new_experiment.method_kwargs["fit_kwargs"][
+        "_feature_generator_kwargs"
+    ] = pipeline
+    return new_experiment
+
+
+def get_boruta_feature_selection(experiment):
+    pipeline = get_fs_pipeline("Boruta")
+    new_experiment = deepcopy(experiment)
+    new_experiment.method_kwargs["fit_kwargs"][
+        "_feature_generator_kwargs"
+    ] = pipeline
+    return new_experiment
+
+
+DEFAULT_PIPELINE_WITHOUT_FEATURE_SELECTION = "NoFS"
+LSFLIP_FEATURE_SELECTION = "LS_Flip"
+LSFLIPSWAP_FEATURE_SELECTION = "LS_FlipSwap"
+BORUTA_FEATURE_SELECTION = "Boruta"
+
 
 PREPROCESSING_METHODS = {
-    DEFAULT_PIPELINE_WITH_FEATURE_SELECTION: default_feature_selection,
+    # DEFAULT_PIPELINE_WITHOUT_FEATURE_SELECTION: default_feature_selection,
+    LSFLIP_FEATURE_SELECTION: get_lsflip_feature_selection,
+    LSFLIPSWAP_FEATURE_SELECTION: get_lsflipswap_feature_selection,
+    BORUTA_FEATURE_SELECTION: get_boruta_feature_selection
 }
