@@ -282,3 +282,5 @@ if __name__ == "__main__":
     finally:
         if ray_temp_dir is not None:
             shutil.rmtree(ray_temp_dir)
+
+# python3 run_tabarena_fs_slurm.py --task_id 146820 --fold 0 --repeat 0 --configs_yaml_file ../../../tabflow/configs/model_configs.yaml --openml_cache_dir ./openml_cache/ --tabrepo_cache_dir ./tabrepo_cache/ --output_dir ./results/ --num_cpus 4 --num_gpus 0 --memory_limit 16000 --ignore_cache False --sequential_local_fold_fitting True

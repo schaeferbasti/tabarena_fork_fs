@@ -81,7 +81,7 @@ def run_eval_for_new_models(
 
 if __name__ == "__main__":
     fig_dir = Path(__file__).parent / "evals"
-    out_dir = Path("../../results/data")
+    out_dir = Path("../results/data")
 
     run_eval_for_new_models(
         [
