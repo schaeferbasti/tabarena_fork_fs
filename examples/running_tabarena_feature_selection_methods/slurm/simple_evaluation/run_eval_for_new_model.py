@@ -57,7 +57,7 @@ def run_eval_for_new_models(
             )
 
     end_to_end_results = EndToEndResults.from_cache(
-        # TODO: check if "+ model.new_result_prefix" is correct here
+        # TODO: check if "+ model.new_result_prefix" is correct here  # Basti: No
         # methods=[(m.method + m.new_result_prefix, m.new_result_prefix) for m in models]
         methods=[m.method for m in models]
     )
@@ -66,7 +66,7 @@ def run_eval_for_new_models(
         leaderboard = end_to_end_results.compare_on_tabarena(
             output_dir=_fig_output_dir,
             subset=_subset,
-            tabarena_context_kwargs=dict(include_unverified=True),
+            # tabarena_context_kwargs=dict(include_unverified=True),
         )
         leaderboard_website = format_leaderboard(df_leaderboard=leaderboard)
         print(leaderboard_website.to_markdown(index=False))
@@ -86,11 +86,12 @@ if __name__ == "__main__":
     run_eval_for_new_models(
         [
             ModelMetadata(
-                path_raw=out_dir / "LightGBM_BAG_L1_Custom",
-                method="RealTabPFN-v2.5",
+                path_raw="../results/data/LightGBM_BAG_L1_Custom",
+                method="LightGBM_BAG_L1_Custom",
+                new_result_prefix="LightGBM_BAG_L1_Custom",
+                only_load_cache=True,
             ),
         ],
-        extra_subsets=[["tabpfn"]],
         fig_output_dir=fig_dir / "Boruta",
-        cache_path=str(Path(__file__).parent / "results/cache"),
+        cache_path=str(Path(__file__).parent.parent / "results/data"),
     )

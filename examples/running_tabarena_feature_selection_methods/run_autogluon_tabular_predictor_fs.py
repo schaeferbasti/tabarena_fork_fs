@@ -9,11 +9,12 @@ from tabarena.benchmark.task.openml import OpenMLTaskWrapper
 
 
 def main():
-    task_id = 146818  # anneal
+    # task_id = 2  # anneal
+    task_id = 14966  # bioresponse
     task = OpenMLTaskWrapper.from_task_id(task_id=task_id)
 
     results = {}
-    methods = ["MetaFS", "Boruta", "Select_k_Best_Chi2", "Original", "MAFESE", "LS_Flip"]
+    methods = ["MetaFS", "Boruta", "Select_k_Best_Chi2", "Original", "MAFESE"]
 
     for method in methods:
 
@@ -33,7 +34,45 @@ def main():
 
             predictor = predictor.fit(
                 train_data=train_data,
-                # presets="best",  # uncomment for a longer run
+                hyperparameters={
+                    'NN_TORCH': {},
+                    'GBM': [
+                        {'extra_trees': True, 'ag_args': {'name_suffix': 'XT'}},
+                        {},
+                        {
+                            "learning_rate": 0.03,
+                            "num_leaves": 128,
+                            "feature_fraction": 0.9,
+                            "min_data_in_leaf": 3,
+                            "ag_args": {"name_suffix": "Large", "priority": 0, "hyperparameter_tune_kwargs": None},
+                        },
+                    ],
+                    'CAT': {},
+                    'XGB': {},
+                    'FASTAI': {},
+                    'RF': [
+                        {'criterion': 'gini',
+                         'ag_args': {'name_suffix': 'Gini', 'problem_types': ['binary', 'multiclass']}},
+                        {'criterion': 'entropy',
+                         'ag_args': {'name_suffix': 'Entr', 'problem_types': ['binary', 'multiclass']}},
+                        {'criterion': 'squared_error',
+                         'ag_args': {'name_suffix': 'MSE', 'problem_types': ['regression']}},
+                    ],
+                    'XT': [
+                        {'criterion': 'gini',
+                         'ag_args': {'name_suffix': 'Gini', 'problem_types': ['binary', 'multiclass']}},
+                        {'criterion': 'entropy',
+                         'ag_args': {'name_suffix': 'Entr', 'problem_types': ['binary', 'multiclass']}},
+                        {'criterion': 'squared_error',
+                         'ag_args': {'name_suffix': 'MSE', 'problem_types': ['regression']}},
+                    ],
+                    'KNN': [
+                        {'weights': 'uniform', 'ag_args': {'name_suffix': 'Unif'}},
+                        {'weights': 'distance', 'ag_args': {'name_suffix': 'Dist'}},
+                    ],
+                    'TABPFN': [{}]
+                },
+                presets="best",  # uncomment for a longer run
                 _feature_generator_kwargs={
                         "post_generators": [FeatureSelectionGenerator(method)],
                     }
@@ -73,7 +112,7 @@ def plot_leaderboards(methods, results, task):
     ax2.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('model_scores_per_method.png', dpi=150)
+    plt.savefig('model_scores_per_method' + task.task_id + '.png', dpi=150)
     plt.show()
 
 
