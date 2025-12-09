@@ -8,7 +8,7 @@ import pandas as pd
 from tabarena.benchmark.experiment import AGModelBagExperiment, ExperimentBatchRunner
 from tabarena.nips2025_utils.end_to_end import EndToEnd
 from tabarena.nips2025_utils.tabarena_context import TabArenaContext
-from tabarena.tabarena.website_format import format_leaderboard
+from bencheval.website_format import format_leaderboard
 
 
 if __name__ == '__main__':
@@ -44,7 +44,7 @@ if __name__ == '__main__':
             time_limit=3600,  # time_limit=3600 was used in the TabArena 2025 paper
         ),
         AGModelBagExperiment(
-            name="RealMLP_c1_BAG_L1_Reproduced",
+            name="TA-RealMLP_c1_BAG_L1_Reproduced",
             model_cls=RealMLPModel,
             model_hyperparameters={},
             num_bag_folds=8,
