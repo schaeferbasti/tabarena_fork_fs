@@ -3,15 +3,15 @@ import logging
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from pandas import DataFrame, Series
 
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
-from sklearn.feature_selection import chi2
+from sklearn.feature_selection import f_regression
 from sklearn.feature_selection import SelectKBest
 
 logger = logging.getLogger(__name__)
 
 
-class Select_k_Best_Chi2(AbstractFeatureGenerator):
+class Select_k_Best_F(AbstractFeatureSelector):
     """ Select k best features from the data using Chi^2 score """
 
     def __init__(self, **kwargs):
@@ -23,7 +23,7 @@ class Select_k_Best_Chi2(AbstractFeatureGenerator):
     def _fit_transform(self, X: DataFrame, y: Series, **kwargs) -> tuple[DataFrame, dict]:
         self._y = y
 
-        self._select_best_kwargs = {"score_func": chi2, "k": 3}
+        self._select_best_kwargs = {"score_func": f_regression, "k": 3}
         self._select_best = SelectKBest(**self._select_best_kwargs).set_output(transform="pandas")
         X_out = self._transform(X, is_train=True)
 
