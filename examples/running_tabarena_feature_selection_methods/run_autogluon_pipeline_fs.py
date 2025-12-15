@@ -5,8 +5,8 @@ from __future__ import annotations
 from autogluon.common import TabularDataset
 from autogluon.core.data import LabelCleaner
 from autogluon.core.models import BaggedEnsembleModel
-from autogluon.features.generators import AutoMLPipelineFeatureGenerator
-from autogluon.features.generators.selection import FeatureSelectionGenerator
+from autogluon.features.generators import AutoMLPipelineFeatureSelector
+from autogluon.features.generators.selection import FeatureSelector
 
 from tabarena.models.utils import get_configs_generator_from_name
 
@@ -28,21 +28,21 @@ y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
-method = "LS_FlipSwap"
+method = "Boruta"
 
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
 print(f"Running TabArena Feature Selection Method: {method}")
-feature_generator, label_cleaner = (
-    AutoMLPipelineFeatureGenerator(
-        post_generators=[FeatureSelectionGenerator(method)]
+feature_selector, label_cleaner = (
+    AutoMLPipelineFeatureSelector(
+        post_selectors=[FeatureSelector(method)]
     ),
     LabelCleaner.construct(problem_type=task_type, y=y_train),
 )
 X_train, y_train = (
-    feature_generator.fit_transform(X_train, y_train),
+    feature_selector.fit_transform(X_train, y_train),
     label_cleaner.transform(y_train),
 )
-X_test, y_test = feature_generator.transform(X_test), label_cleaner.transform(y_test)
+X_test, y_test = feature_selector.transform(X_test), label_cleaner.transform(y_test)
 
 if cross_validation_bagging:
     model = BaggedEnsembleModel(
