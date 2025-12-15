@@ -52,9 +52,15 @@ def run_eval_for_new_models(
             EndToEndSingle.from_path_raw_to_results(
                 path_raw=model.path_raw,
                 name_suffix=model.new_result_prefix,
-                artifact_name=model.new_result_prefix,
+                artifact_name="tabarena-2025-06-12",
                 num_cpus=8,
             )
+
+    end_to_end_results = EndToEndResults.from_cache(
+        # TODO: check if "+ model.new_result_prefix" is correct here  # Basti: No
+        # methods=[(m.method + m.new_result_prefix, m.new_result_prefix) for m in models]
+        methods=[m.method for m in models]
+    )
 
     end_to_end_results = EndToEndResults.from_cache(
         # TODO: check if "+ model.new_result_prefix" is correct here  # Basti: No
@@ -95,3 +101,13 @@ if __name__ == "__main__":
         fig_output_dir=fig_dir / "Boruta",
         cache_path=str(Path(__file__).parent.parent / "results/Boruta/data"),
     )
+
+
+# MetaFS:
+# |  43 | CRF (tuned + ensemble) [91.48% IMPUTED]      |       1017 | +43/-39      |        0.003 |       41.67 |                39.82 |                   21.684 |                            0.44 |                             0.052 |              91.48 | True      | CPU        |
+# |  44 | CRF (tuned) [91.48% IMPUTED]                 |       1016 | +45/-43      |        0.003 |       41.71 |                39.75 |                   21.684 |                            0.44 |                             0.051 |              91.48 | True      | CPU        |
+# |  51 | CRF (default) [91.48% IMPUTED]               |        937 | +44/-46      |        0.001 |       44.96 |                43.92 |                   21.979 |                            0.41 |                             0.049 |              91.48 | True      | CPU        |
+
+
+
+
