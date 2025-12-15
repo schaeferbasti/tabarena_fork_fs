@@ -3,12 +3,12 @@ import logging
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from pandas import DataFrame, Series
 
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 logger = logging.getLogger(__name__)
 
 
-class MetaFeatureSelector(AbstractFeatureGenerator):
+class MetaFeatureSelector(AbstractFeatureSelector):
     """MetaFS feature selection using metalearning approach."""
 
     def __init__(self, time_limit=1800, memory_limit=64000, model="LightGBM_BAG_L1", **kwargs):

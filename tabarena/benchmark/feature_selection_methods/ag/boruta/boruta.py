@@ -3,12 +3,12 @@ from pandas import DataFrame, Series
 from sklearn.ensemble import RandomForestClassifier
 
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 from tabarena.benchmark.feature_selection_methods.ag.boruta.method import BorutaPy
 
 
-class Boruta(AbstractFeatureGenerator):
+class Boruta(AbstractFeatureSelector):
     """ Select features from the data using Boruta algorithm """
 
     def __init__(self, **kwargs):

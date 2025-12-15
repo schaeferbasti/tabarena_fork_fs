@@ -4,9 +4,9 @@ from mafese import Data
 from mafese import UnsupervisedSelector
 
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
-class MAFESE(AbstractFeatureGenerator):
+class MAFESE(AbstractFeatureSelector):
     """ Select features from the data using Boruta algorithm """
 
     def __init__(self, **kwargs):

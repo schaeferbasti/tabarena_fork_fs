@@ -3,14 +3,14 @@ import logging
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from pandas import DataFrame, Series
 
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 from tabarena.benchmark.feature_selection_methods.ag.enumeration.method.Enumeration import Enumerator
 
 logger = logging.getLogger(__name__)
 
 
-class EnumerationFeatureSelector(AbstractFeatureGenerator):
+class EnumerationFeatureSelector(AbstractFeatureSelector):
     """ Local Search, only allowing for flipping features """
 
     def __init__(self, **kwargs):

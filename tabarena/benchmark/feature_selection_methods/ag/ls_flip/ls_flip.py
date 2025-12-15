@@ -3,12 +3,12 @@ import logging
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from pandas import DataFrame, Series
 
-from autogluon.features.generators.abstract import AbstractFeatureGenerator
+from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 logger = logging.getLogger(__name__)
 
 
-class LocalSearchFeatureSelector_Flip(AbstractFeatureGenerator):
+class LocalSearchFeatureSelector_Flip(AbstractFeatureSelector):
     """ Local Search, only allowing for flipping features """
 
     def __init__(self, **kwargs):
