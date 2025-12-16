@@ -1,4 +1,5 @@
 from pandas import DataFrame, Series
+import time
 
 from sklearn.ensemble import RandomForestClassifier
 
@@ -6,6 +7,7 @@ from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 from tabarena.benchmark.feature_selection_methods.ag.boruta.method import BorutaPy
+from autogluon.core.utils.exceptions import NotEnoughMemoryError, TimeLimitExceeded
 
 
 class Boruta(AbstractFeatureSelector):
@@ -24,9 +26,17 @@ class Boruta(AbstractFeatureSelector):
         self._boruta_kwargs = {"estimator": rf, "n_estimators": "auto", "verbose": 2}
         self._boruta = BorutaPy(**self._boruta_kwargs)
 
+        # Time limit
+        if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+            if kwargs["time_limit"] is not None:
+                time_cur = time.time()
+                time_left = kwargs["time_limit"] - (time_cur - kwargs["start_time"])
+                if time_left <= kwargs["time_limit"] * 0.4:  # if 60% of time was spent preprocessing, likely not enough time to train model
+                    raise TimeLimitExceeded
+
         # Convert to numpy for BorutaPy
         X_np = X.values if isinstance(X, DataFrame) else X
-        self._boruta.fit(X_np, y.ravel())
+        self._boruta.fit(X_np, y.ravel(), **kwargs)
 
         # Get selected feature indices and names
         selected_mask = self._boruta.support_
