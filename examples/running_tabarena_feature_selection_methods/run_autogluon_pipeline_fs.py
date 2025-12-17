@@ -29,6 +29,7 @@ X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
 method = "Boruta"
+n_features = 10
 
 # --- Using a TabArena Model: Preprocessing, Train, and Predict:
 print(f"Running TabArena Feature Selection Method: {method}")
@@ -39,7 +40,7 @@ feature_selector, label_cleaner = (
     LabelCleaner.construct(problem_type=task_type, y=y_train),
 )
 X_train, y_train = (
-    feature_selector.fit_transform(X_train, y_train),
+    feature_selector.fit_transform(X_train, y_train, n_features),
     label_cleaner.transform(y_train),
 )
 X_test, y_test = feature_selector.transform(X_test), label_cleaner.transform(y_test)

@@ -16,12 +16,13 @@ class Boruta(AbstractFeatureSelector):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._boruta = None
+        self._n_features = None
         self._y = None
         self._selected_features = None
 
-    def _fit_transform(self, X: DataFrame, y: Series, **kwargs) -> tuple[DataFrame, dict]:
+    def _fit_transform(self, X: DataFrame, y: Series, n_features: int, **kwargs) -> tuple[DataFrame, dict]:
         self._y = y
-
+        self._n_features = n_features
         rf = RandomForestClassifier(n_jobs=-1, class_weight='balanced', max_depth=5)
         self._boruta_kwargs = {"estimator": rf, "n_estimators": "auto", "verbose": 2}
         self._boruta = BorutaPy(**self._boruta_kwargs)
@@ -44,7 +45,10 @@ class Boruta(AbstractFeatureSelector):
 
         # Transform data
         X_out = X[self._selected_features].copy()
-
+        if n_features is not None and len(X_out.columns) > n_features:
+            X_out = X_out.sample(n=n_features, axis=1)
+            type_family_groups_special = {}
+            self._selected_features = list(X_out.columns)
         # Update metadata
         self.feature_metadata_in = self.feature_metadata_in.keep_features(self._selected_features, inplace=False)
         type_family_groups_special = {}
