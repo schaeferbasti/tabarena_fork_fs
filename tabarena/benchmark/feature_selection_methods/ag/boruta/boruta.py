@@ -8,6 +8,8 @@ from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 from tabarena.benchmark.feature_selection_methods.ag.boruta.method import BorutaPy
 from autogluon.core.utils.exceptions import NotEnoughMemoryError, TimeLimitExceeded
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Boruta(AbstractFeatureSelector):
@@ -16,28 +18,30 @@ class Boruta(AbstractFeatureSelector):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._boruta = None
-        self._n_features = None
         self._y = None
         self._selected_features = None
 
-    def _fit_transform(self, X: DataFrame, y: Series, n_features: int, **kwargs) -> tuple[DataFrame, dict]:
+    def _fit_transform(self, X: DataFrame, y: Series, model, n_max_features: int, **kwargs) -> tuple[DataFrame, dict]:
         self._y = y
-        self._n_features = n_features
         rf = RandomForestClassifier(n_jobs=-1, class_weight='balanced', max_depth=5)
         self._boruta_kwargs = {"estimator": rf, "n_estimators": "auto", "verbose": 2}
-        self._boruta = BorutaPy(**self._boruta_kwargs)
+        self._boruta = BorutaPy(n_max_features, **self._boruta_kwargs)
 
         # Time limit
-        if "time_limit" in kwargs and kwargs["time_limit"] is not None:
-            if kwargs["time_limit"] is not None:
-                time_cur = time.time()
-                time_left = kwargs["time_limit"] - (time_cur - kwargs["start_time"])
-                if time_left <= kwargs["time_limit"] * 0.4:  # if 60% of time was spent preprocessing, likely not enough time to train model
-                    raise TimeLimitExceeded
+        extra_fit_kwargs = dict()
+        callbacks = []
+        time_cur = time.time()
+        time_left = kwargs["time_limit"] - (time_cur - kwargs["start_time"])
+        if time_left <= 0:
+            logger.warning(
+                f'\tWarning: Method has no time left to train, skipping method... (Time Left = {kwargs["time_limit"]:.1f}s)')
+            raise TimeLimitExceeded
+            callbacks.append(TimeCheckCallback(time_start=time_cur, time_limit=time_left))
+        extra_fit_kwargs["callbacks"] = callbacks
 
         # Convert to numpy for BorutaPy
         X_np = X.values if isinstance(X, DataFrame) else X
-        self._boruta.fit(X_np, y.ravel(), **kwargs)
+        self._boruta.fit(X_np, y.ravel(), n_max_features, **kwargs)
 
         # Get selected feature indices and names
         selected_mask = self._boruta.support_
@@ -45,12 +49,12 @@ class Boruta(AbstractFeatureSelector):
 
         # Transform data
         X_out = X[self._selected_features].copy()
-        if n_features is not None and len(X_out.columns) > n_features:
-            X_out = X_out.sample(n=n_features, axis=1)
+        """if n_max_features is not None and len(X_out.columns) > n_max_features:
+            X_out = X_out.sample(n=n_max_features, axis=1)
             type_family_groups_special = {}
-            self._selected_features = list(X_out.columns)
+            self._selected_features = list(X_out.columns)"""
         # Update metadata
-        self.feature_metadata_in = self.feature_metadata_in.keep_features(self._selected_features, inplace=False)
+        # self.feature_metadata_in = self.feature_metadata_in.keep_features(self._selected_features, inplace=False)
         type_family_groups_special = {}
 
         return X_out, type_family_groups_special

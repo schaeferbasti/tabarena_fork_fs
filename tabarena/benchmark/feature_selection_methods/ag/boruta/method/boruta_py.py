@@ -198,9 +198,10 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         Journal of Statistical Software, Vol. 36, Issue 11, Sep 2010
     """
 
-    def __init__(self, estimator, n_estimators=1000, perc=100, alpha=0.05,
+    def __init__(self, n_max_features, estimator, n_estimators=1000, perc=100, alpha=0.05,
                  two_step=True, max_iter=100, random_state=None, verbose=0,
                  early_stopping=False, n_iter_no_change=20):
+        self.n_features_ = n_max_features
         self.estimator = estimator
         self.n_estimators = n_estimators
         self.perc = perc
@@ -214,7 +215,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         self.__version__ = '0.3'
         self._is_lightgbm = 'lightgbm' in str(type(self.estimator))
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y, n_max_features, **kwargs):
         """
         Fits the Boruta feature selection with the provided estimator.
 
@@ -227,7 +228,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
             The target values.
         """
 
-        return self._fit(X, y, **kwargs)
+        return self._fit(X, y, n_max_features, **kwargs)
 
     def transform(self, X, weak=False, return_df=False):
         """
@@ -291,7 +292,7 @@ class BorutaPy(BaseEstimator, TransformerMixin):
                 "input needs to be a numpy array or pandas data frame."
             )
 
-    def _fit(self, X, y, **kwargs):
+    def _fit(self, X, y, n_max_features, **kwargs):
         # check input params
         self._check_params(X, y)
 
@@ -407,9 +408,15 @@ class BorutaPy(BaseEstimator, TransformerMixin):
         # ignore the first row of zeros
         tentative_median = np.median(imp_history[1:, tentative], axis=0)
         # which tentative to keep
-        tentative_confirmed = np.where(tentative_median
-                                       > np.median(sha_max_history))[0]
+        tentative_confirmed = np.where(tentative_median > np.median(sha_max_history))[0]
         tentative = tentative[tentative_confirmed]
+
+        selected = np.hstack((confirmed, tentative))
+        if n_max_features is not None and len(selected) > n_max_features:
+            cur_importances = cur_imp[0][selected]
+            top_indices = np.argsort(cur_importances)[::-1][:self.n_features_]
+            selected = selected[top_indices]
+            confirmed = selected  # Update confirmed to be the top features
 
         # basic result variables
         self.n_features_ = confirmed.shape[0]
