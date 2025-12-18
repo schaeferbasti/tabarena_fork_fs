@@ -28,8 +28,8 @@ y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
-method = "LS_Flip"
-n_max_features = 13
+method = "Boruta"
+n_max_features = 10
 model = BaggedEnsembleModel(
         model_cls(problem_type=task_type, **model_config),
         hyperparameters=dict(refit_folds=refit_model),
