@@ -1,136 +1,101 @@
 from __future__ import annotations
-
-from itertools import combinations
-
-import pandas as pd
-
 import warnings
+
+import numpy as np
+import pandas as pd
+from itertools import combinations
 
 from sklearn.model_selection import train_test_split
 
-from tabarena.benchmark.feature_selection_methods.ag.metafs.method.utils.run_models import \
-    get_sklearn_model_score_classification, get_sklearn_model_score_regression
+import copy
+import logging
+import time
+logger = logging.getLogger(__name__)
 
 warnings.filterwarnings('ignore')
 
 
 class Enumerator:
-    """Enumerator with resource limits."""
+    """Enumerated feature selector"""
 
-    def __init__(self, time_limit: int = 300, memory_limit: int = 16000, model: str = 'LightGBM_BAG_L1'):
-        self.time_limit = time_limit
-        self.memory_limit = memory_limit
-        self.model = model
-        self.dataset_id = 146820
-        self.task_type = "Supervised Classification"
-        self.score = "log_loss"
-        self.repeat = None
-        self._selected_features = None
+    def __init__(self, model):
         self._y = None
-        self.LOWER_BETTER = ["log_loss", "root_mean_squared_error", "max_error"]
-        self.HIGHER_BETTER = ["roc_auc_score"]
+        self._model = model
+        self._n_max_features = None
+        self._selected_features = None
 
 
-    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series, model, n_max_features, **kwargs) -> pd.DataFrame:
         self._y = y
-        result = self._run_with_limits(self._fit_transform_internal, X, y, self.dataset_id)
-
-        if result is None:
-            self._selected_features = list(X.columns)
-            return X
-
-        X_selected, y_selected = result
+        self._model = model
+        self._n_max_features = n_max_features
+        init_feature_choice = [0] * len(X.columns)
+        X_selected = self.get_enumerated_indices(X, y, model, n_max_features, init_feature_choice, **kwargs)
+        X_selected = pd.DataFrame(X, columns=X_selected.columns, index=X.index)
         self._selected_features = list(X_selected.columns)
         return X_selected
 
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self._selected_features is None:
-            self.fit_transform(X, self._y)
+            self.fit_transform(X, self._y, self._model, self._n_max_features)
         return X[self._selected_features]
 
 
-    def _fit_transform_internal(self, X_train, y_train, dataset_id):
-        feature_names = X_train.columns.tolist()
-        init_feature_choice = [0] * len(X_train.columns)
-        feature_indices = self.get_ls_indices(X_train, y_train, dataset_id, self.task_type, self.model, self.score,
-                                              self.repeat, init_feature_choice)
-
-        # Evaluate all combinations and get the best
-        best_indices = self.evaluate_all_combinations(X_train, y_train, dataset_id, self.task_type, self.model,
-                                                      self.score, self.repeat, feature_indices)
-
-        selected_feature_names = [feature_names[i] for i, flag in enumerate(best_indices) if flag == 1]
-        X_train_new = pd.DataFrame(X_train, columns=selected_feature_names, index=X_train.index)
-        return X_train_new, y_train
-
-    def get_ls_indices(self, X_train, y_train, dataset_id, task_type, model_name, score_name, repeat, feature_indices):
-        n_features = X_train.shape[1]
-        all_combinations_list = []
-
-        for selected_n_features in range(1, n_features + 1):
-            for feature_combo in combinations(range(n_features), selected_n_features):
-                # Convert tuple to binary list (0s and 1s)
-                binary_indices = [0] * n_features
-                for idx in feature_combo:
-                    binary_indices[idx] = 1
-                all_combinations_list.append(binary_indices)
-
-        return all_combinations_list
-
-    def evaluate_all_combinations(self, X_train, y_train, dataset_id, task_type, model_name, score_name, repeat,
-                                  all_combinations):
-        direction = self.get_metric_direction(score_name)
-        best_score = float('-inf') if direction == "higher" else float('inf')
+    def get_enumerated_indices(self, X_train, y_train, model, n_max_features, feature_indices, **kwargs):
+        """
+        Enumerate all possible feature combinations starting from n_max_features down to 1.
+        """
+        best_score = -np.inf
         best_indices = None
+        best_selected_features = None
+        n_features_total = len(feature_indices)
 
-        for feature_indices in all_combinations:
-            print(feature_indices)
-            feature_mask = [bool(i) for i in feature_indices]
-            X_train_selection = X_train.iloc[:, feature_mask]
-            score = self.evaluate_subset(X_train_selection, y_train, dataset_id, task_type, model_name, score_name,
-                                         repeat)
+        # Start from n_max_features and go down to 1
+        for num_features in range(n_max_features, 0, -1):
+            # Time limit check
+            if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+                time_cur = time.time()
+                kwargs["time_limit"] -= time_cur - kwargs["start_time"]
+                if kwargs["time_limit"] <= 0:
+                    logger.warning(
+                        f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
+                    if best_indices is not None:
+                        self._selected_features = best_selected_features
+                        return best_indices
+                    else:
+                        # Fallback: randomly select n_max_features
+                        X_out = X_train.sample(n=n_max_features, axis=1)
+                        self._selected_features = list(X_out.columns)
+                        return [1 if col in X_out.columns else 0 for col in X_train.columns]
 
-            if direction == "higher":
+            # Generate all combinations of feature indices for current num_features
+            feature_indices_list = list(range(n_features_total))
+
+            for feature_combo in combinations(feature_indices_list, num_features):
+                # Create feature indices array
+                feature_indices_candidate = [0] * n_features_total
+                for idx in feature_combo:
+                    feature_indices_candidate[idx] = 1
+                print(feature_indices_candidate)
+                feature_mask = [bool(i) for i in feature_indices_candidate]
+                X_train_selection = X_train.iloc[:, feature_mask]
+
+                # Evaluate this combination
+                score = self.evaluate_subset(self, X_train_selection, y_train, model)
                 if score > best_score:
                     best_score = score
-                    best_indices = feature_indices
-            else:  # lower
-                if score < best_score:
-                    best_score = score
-                    best_indices = feature_indices
-
+                    best_indices = feature_indices_candidate
+                    best_selected_features = list(X_train_selection.columns)
+        self._selected_features = best_selected_features
         return best_indices
-
-    def get_metric_direction(self, score_name):
-        if score_name in self.HIGHER_BETTER:
-            return "higher"
-        else:
-            return "lower"
 
 
     @staticmethod
-    def evaluate_subset(X, y, dataset_id, task_type, model_name, score_name, repeat):
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
-        if task_type == "Supervised Classification":
-            results = get_sklearn_model_score_classification(X_train, y_train, X_val, y_val, dataset_id, "EnumerateFS", model_name, repeat, score_name)
-        else:
-            results = get_sklearn_model_score_regression(X_train, y_train, X_val, y_val, dataset_id, "EnumerateFS", model_name, repeat, score_name)
-        return results["score_test"].iloc[0]
-
-
-    def _run_with_limits(self, target_func, *args):
-        import signal
-
-        def timeout_handler():
-            raise TimeoutError(f"Method exceeded time limit of {self.time_limit} seconds")
-
-        try:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(self.time_limit))
-            result = target_func(*args)
-            signal.alarm(0)
-            return result
-        except TimeoutError as e:
-            print(f"[MetaFS] {e}")
-            return None
+    def evaluate_subset(self, X, y, model):
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        model_copy = copy.deepcopy(model)
+        model_copy.params["fold_fitting_strategy"] = "sequential_local"
+        model_copy = model_copy.fit(X=X_train, y=y_train, k_fold=8)
+        self._model = model_copy
+        return model_copy.score_with_oof(y=y_train)
