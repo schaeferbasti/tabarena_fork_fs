@@ -6,6 +6,11 @@ from mafese import UnsupervisedSelector
 from autogluon.common.features.types import R_INT, R_FLOAT, R_OBJECT
 from autogluon.features.generators.abstract import AbstractFeatureSelector
 
+import logging
+import time
+
+logger = logging.getLogger(__name__)
+
 
 class MAFESE(AbstractFeatureSelector):
     """ Select features from the data using Boruta algorithm """
@@ -41,7 +46,29 @@ class MAFESE(AbstractFeatureSelector):
 
         self._mafese_kwargs = {"problem": problem, "method": "DR", "n_features": n_max_features}
         self._mafese = UnsupervisedSelector(**self._mafese_kwargs)
+        if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+            time_start_fit = time.time()
+            kwargs["time_limit"] -= time_start_fit - kwargs["start_time"]
+            if kwargs["time_limit"] <= 0:
+                logger.warning(
+                    f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
+                if n_max_features is not None and len(X.columns) > n_max_features:
+                    X_out = X.sample(n=n_max_features, axis=1)
+                    return X_out
+                else:
+                    return X
         self._mafese.fit(data.X_train, data.y_train)
+        if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+            time_start_fit = time.time()
+            kwargs["time_limit"] -= time_start_fit - kwargs["start_time"]
+            if kwargs["time_limit"] <= 0:
+                logger.warning(
+                    f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
+                if n_max_features is not None and len(X.columns) > n_max_features:
+                    X_out = X.sample(n=n_max_features, axis=1)
+                    return X_out
+                else:
+                    return X
         selected_features_indexes = self._mafese.selected_feature_indexes
         X_out = X.iloc[:, selected_features_indexes]
         self._selected_features = list(X_out.columns)
