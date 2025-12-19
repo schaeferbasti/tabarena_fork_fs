@@ -41,10 +41,11 @@ class Enumerator:
             self.fit_transform(X, self._y, self._model, self._n_max_features)
         return X[self._selected_features]
 
+    from itertools import combinations
 
     def get_enumerated_indices(self, X_train, y_train, model, n_max_features, feature_indices, **kwargs):
         """
-        Enumerate all possible feature combinations starting from n_max_features down to 1.
+        Enumerate all possible feature combinations starting from n_max_features down to 1 as long as we have time.
         """
         best_score = -np.inf
         best_indices = None
@@ -53,26 +54,26 @@ class Enumerator:
 
         # Start from n_max_features and go down to 1
         for num_features in range(n_max_features, 0, -1):
-            # Time limit check
-            if "time_limit" in kwargs and kwargs["time_limit"] is not None:
-                time_cur = time.time()
-                kwargs["time_limit"] -= time_cur - kwargs["start_time"]
-                if kwargs["time_limit"] <= 0:
-                    logger.warning(
-                        f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
-                    if best_indices is not None:
-                        self._selected_features = best_selected_features
-                        return best_indices
-                    else:
-                        # Fallback: randomly select n_max_features
-                        X_out = X_train.sample(n=n_max_features, axis=1)
-                        self._selected_features = list(X_out.columns)
-                        return [1 if col in X_out.columns else 0 for col in X_train.columns]
-
             # Generate all combinations of feature indices for current num_features
             feature_indices_list = list(range(n_features_total))
 
             for feature_combo in combinations(feature_indices_list, num_features):
+                # Time limit check
+                if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+                    time_cur = time.time()
+                    kwargs["time_limit"] -= time_cur - kwargs["start_time"]
+                    if kwargs["time_limit"] <= 0:
+                        logger.warning(
+                            f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
+                        if best_indices is not None:
+                            self._selected_features = best_selected_features
+                            return X_train[self._selected_features]
+                        else:
+                            # Fallback: randomly select n_max_features (will not be triggered normally)
+                            X_out = X_train.sample(n=n_max_features, axis=1)
+                            self._selected_features = list(X_out.columns)
+                            return X_out
+
                 # Create feature indices array
                 feature_indices_candidate = [0] * n_features_total
                 for idx in feature_combo:
