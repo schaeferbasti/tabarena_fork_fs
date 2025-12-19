@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.error import URLError
+
 from autogluon.common import TabularDataset
 from autogluon.core.data import LabelCleaner
 from autogluon.core.models import BaggedEnsembleModel
@@ -15,20 +17,26 @@ task_type = "binary"
 cross_validation_bagging = True
 refit_model = False
 model_to_run = "CatBoost"
-
 model_meta = get_configs_generator_from_name(model_name=model_to_run)
 model_cls = model_meta.model_cls
 model_config = model_meta.manual_configs[0]
 
-train_data = TabularDataset('https://autogluon.s3.amazonaws.com/datasets/AdultIncomeBinaryClassification/train_data.csv')
-test_data = TabularDataset('https://autogluon.s3.amazonaws.com/datasets/AdultIncomeBinaryClassification/test_data.csv')
+try:
+    train_data = TabularDataset('https://autogluon.s3.amazonaws.com/datasets/AdultIncomeBinaryClassification/train_data.csv')
+    test_data = TabularDataset('https://autogluon.s3.amazonaws.com/datasets/AdultIncomeBinaryClassification/test_data.csv')
+    # Save to local disk
+    train_data.to_csv('train_data.csv', index=False)
+    test_data.to_csv('test_data.csv', index=False)
+except URLError:
+    train_data = TabularDataset('train_data.csv')
+    test_data = TabularDataset('test_data.csv')
 
 X_train = train_data.drop("class", axis=1)
 y_train = train_data["class"]
 X_test = test_data.drop("class", axis=1)
 y_test = test_data["class"]
 
-method = "Boruta"
+method = "MetaFS"
 n_max_features = 10
 model = BaggedEnsembleModel(
         model_cls(problem_type=task_type, **model_config),
@@ -55,11 +63,3 @@ else:
     model = model_cls(problem_type=task_type, **model_config)
     model = model.fit(X=X_train, y=y_train)
 y_pred = model.predict(X=X_test)
-
-
-# MetaFS -> Validation accuracy: 0.8530954879328436Usi
-        # Boruta -> Validation accuracy: 0.8538376884293502
-        # LS_Flip -> Validation accuracy: 0.8538376884293502
-        # MAFESE -> Validation accuracy: 0.8468507665139611
-        # Select_k_Best_Chi2 -> Validation accuracy: 0.8317764184987075
-        # No Feature Selection -> Validation accuracy: 0.8754126890691782
