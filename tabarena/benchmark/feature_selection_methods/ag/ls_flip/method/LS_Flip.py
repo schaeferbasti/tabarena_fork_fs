@@ -10,7 +10,6 @@ from sklearn.model_selection import train_test_split
 import copy
 import logging
 import time
-from autogluon.core.utils.exceptions import NotEnoughMemoryError, TimeLimitExceeded
 logger = logging.getLogger(__name__)
 
 warnings.filterwarnings('ignore')
@@ -20,15 +19,16 @@ class LS_Flip:
     """LS feature selector (only flip)"""
 
     def __init__(self, model):
-        self._model = model
-        self._selected_features = None
         self._y = None
+        self._model = model
+        self._n_max_features = None
+        self._selected_features = None
 
 
     def fit_transform(self, X: pd.DataFrame, y: pd.Series, model, n_max_features, **kwargs) -> pd.DataFrame:
         self._y = y
         self._model = model
-        feature_names = X.columns.tolist()
+        self._n_max_features = n_max_features
         init_feature_choice = [0] * len(X.columns)
         X_selected = self.get_ls_flip_indices(X, y, model, n_max_features, init_feature_choice, **kwargs)
         X_selected = pd.DataFrame(X, columns=X_selected.columns, index=X.index)
@@ -38,7 +38,7 @@ class LS_Flip:
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self._selected_features is None:
-            self.fit_transform(X, self._y, self._model)
+            self.fit_transform(X, self._y, self._model, self._n_max_features)
         return X[self._selected_features]
 
 
@@ -54,31 +54,35 @@ class LS_Flip:
                 if kwargs["time_limit"] <= 0:
                     logger.warning(
                         f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
-                    return X_train[self._selected_features]
+                    if self._selected_features is None:
+                        X_out = X_train.sample(n=n_max_features, axis=1)
+                        self._selected_features = list(X_out.columns)
+                        return X_out
+                    else:
+                        if n_max_features is not None and len(self._selected_features) > n_max_features:
+                            X_out = X_train.sample(n=n_max_features, axis=1)
+                            self._selected_features = list(X_out.columns)
+                            return X_out
+                        else:
+                            return X_train[self._selected_features]
             list_of_feature_indices = self.get_flip_indices(feature_indices)
             print(list_of_feature_indices)
             improvement_found = False
             for feature_indices in list_of_feature_indices:
                 feature_mask = [bool(i) for i in feature_indices]
                 X_train_selection = X_train.iloc[:, feature_mask]
-                score = self.evaluate_subset(self, X_train_selection, y_train, model)
-                if score > best_score:
-                    best_score = score
-                    best_indices = feature_indices
-                    improvement_found = True
+                if sum(feature_mask) <= n_max_features:
+                    score = self.evaluate_subset(self, X_train_selection, y_train, model)
+                    if score > best_score:
+                        best_score = score
+                        best_indices = feature_indices
+                        improvement_found = True
             feature_indices = best_indices
             all_ones = all(i == 1 for i in feature_indices)
-            if all_ones or not improvement_found or sum(feature_indices) == n_max_features:
+            if all_ones or not improvement_found:
                 termination_condition = True
             self._selected_features = list(X_train_selection.columns)
         return best_indices
-
-
-    def get_metric_direction(self, score_name):
-        if score_name in self.HIGHER_BETTER:
-            return "higher"
-        else:
-            return "lower"
 
 
     @staticmethod

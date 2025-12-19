@@ -5,7 +5,6 @@ from autogluon.features.generators.abstract import AbstractFeatureSelector
 
 import logging
 import time
-from autogluon.core.utils.exceptions import NotEnoughMemoryError, TimeLimitExceeded
 logger = logging.getLogger(__name__)
 
 
@@ -25,7 +24,7 @@ class LocalSearchFeatureSelector_Flip(AbstractFeatureSelector):
         self._model = model
         self._ls_flip_kwargs = {}
         from tabarena.benchmark.feature_selection_methods.ag.ls_flip.method.LS_Flip import LS_Flip
-        self._ls_flip = LS_Flip(model, **self._ls_flip_kwargs)
+        self._ls_flip = LS_Flip(model)
         # Time limit
         if "time_limit" in kwargs and kwargs["time_limit"] is not None:
             time_start_fit = time.time()
@@ -33,11 +32,14 @@ class LocalSearchFeatureSelector_Flip(AbstractFeatureSelector):
             if kwargs["time_limit"] <= 0:
                 logger.warning(
                     f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
-                raise TimeLimitExceeded
+                if n_max_features is not None and len(X.columns) > n_max_features:
+                    X_out = X.sample(n=n_max_features, axis=1)
+                    return X_out
+                else:
+                    return X
         X_out = self._ls_flip.fit_transform(X, y, model, n_max_features, **kwargs)
         if n_max_features is not None and len(X_out.columns) > n_max_features:
             X_out = X_out.sample(n=n_max_features, axis=1)
-            type_family_groups_special = {}
         self._selected_features = list(X_out.columns)
         type_family_groups_special = {}
         return X_out, type_family_groups_special
