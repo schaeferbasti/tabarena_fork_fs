@@ -16,13 +16,14 @@ class LocalSearchFeatureSelector_Flip(AbstractFeatureSelector):
         self._ls_flip = None
         self._y = None
         self._model = None
+        self._n_max_features = None
         self._selected_features = None
 
 
     def _fit_transform(self, X: DataFrame, y: Series, model, n_max_features: int, **kwargs) -> tuple[DataFrame, dict]:
         self._y = y
         self._model = model
-        self._ls_flip_kwargs = {}
+        self._n_max_features = n_max_features
         from tabarena.benchmark.feature_selection_methods.ag.ls_flip.method.LS_Flip import LS_Flip
         self._ls_flip = LS_Flip(model)
         # Time limit
@@ -47,7 +48,7 @@ class LocalSearchFeatureSelector_Flip(AbstractFeatureSelector):
 
     def _transform(self, X: DataFrame, *, is_train: bool = False) -> DataFrame:
         if is_train:
-            X = self._ls_flip.fit_transform(X, self._y, self._model)
+            X = self._ls_flip.fit_transform(X, self._y, self._model, self._n_max_features)
             self._selected_features = list(X.columns)
         else:
             X = X[self._ls_flip._selected_features]

@@ -14,6 +14,7 @@ class EnumerationFeatureSelector(AbstractFeatureSelector):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._enum = None
         self._y = None
         self._model = None
         self._n_max_features = None
