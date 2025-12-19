@@ -1,70 +1,69 @@
 from __future__ import annotations
-
+import warnings
+import logging
+import time
 import pandas as pd
 
 from autogluon.tabular.models import CatBoostModel
 from tabarena.benchmark.feature_selection_methods.ag.metafs.method.Add_Pandas_Metafeatures import add_pandas_metadata_selection_columns
 
-import warnings
+logger = logging.getLogger(__name__)
 warnings.filterwarnings('ignore')
 
 
 class MetaFS:
     """MetaFS feature selector with resource limits."""
 
-    def __init__(self, time_limit: int = 300, memory_limit: int = 16000, model: str = 'LightGBM_BAG_L1'):
-        self.time_limit = time_limit
-        self.memory_limit = memory_limit
-        self.model = model
-        self.dataset_id = 146820
+    def __init__(self, model):
+        self._y = None
+        self._model = model
+        self._n_max_features = None
         self._selected_features = None
 
 
-    def fit_transform(self, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    def fit_transform(self, X: pd.DataFrame, y: pd.Series, model, n_max_features, **kwargs) -> pd.DataFrame:
         self._y = y
+        self._model = model
+        self._n_max_features = n_max_features
+        # Time limit
+        if "time_limit" in kwargs and kwargs["time_limit"] is not None:
+            time_start_fit = time.time()
+            kwargs["time_limit"] -= time_start_fit - kwargs["start_time"]
+            if kwargs["time_limit"] <= 0:
+                logger.warning(
+                    f'\tWarning: FeatureSelection Method has no time left to train... (Time Left = {kwargs["time_limit"]:.1f}s)')
+                if n_max_features is not None and len(X.columns) > n_max_features:
+                    X_out = X.sample(n=n_max_features, axis=1)
+                    return X_out
+                else:
+                    return X
+        result_matrix = pd.read_parquet("../../tabarena/benchmark/feature_selection_methods/ag/metafs/method/Pandas_Matrix_Complete.parquet")
         dataset_metadata = self._extract_metadata(y)
-        result = self._run_with_limits(self._fit_transform_internal, X, y, self.model, dataset_metadata, self.dataset_id)
+        """if dataset_id in datasets:
+            result_matrix = result_matrix[result_matrix["dataset - id"] != dataset_id]"""
+        comparison_result_matrix = self.create_empty_core_matrix_for_dataset(X, model)
+        comparison_result_matrix = add_pandas_metadata_selection_columns(dataset_metadata, X, comparison_result_matrix)
 
-        if result is None:
-            self._selected_features = list(X.columns)
-            return X
+        X_train_new, y_train_new = self.predict_improvement(result_matrix, comparison_result_matrix, X, y)
 
-        X_selected, y_selected = result
-        self._selected_features = list(X_selected.columns)
-        return X_selected
+        if X_train_new.equals(X):
+            return X_train_new
+        else:
+            return self.fit_transform(X_train_new, y_train_new, model, n_max_features, **kwargs)
 
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
         if self._selected_features is None:
-            self.fit_transform(X, self._y)
+            self.fit_transform(X, self._y, self._model, self._n_max_features)
         return X[self._selected_features]
-
-
-    def _fit_transform_internal(self, X_train, y_train, model, dataset_metadata, dataset_id):
-        result_matrix = pd.read_parquet("../../tabarena/benchmark/feature_selection_methods/ag/metafs/method/Pandas_Matrix_Complete.parquet")
-        datasets = pd.unique(result_matrix["dataset - id"]).tolist()
-        if dataset_id in datasets:
-            result_matrix = result_matrix[result_matrix["dataset - id"] != dataset_id]
-
-        comparison_result_matrix = self.create_empty_core_matrix_for_dataset(X_train, model, dataset_id)
-        comparison_result_matrix = add_pandas_metadata_selection_columns(dataset_metadata, X_train, comparison_result_matrix)
-
-        X_train_new, y_train_new = self.predict_improvement(result_matrix, comparison_result_matrix, X_train, y_train)
-
-        if X_train_new.equals(X_train):
-            return X_train_new, y_train_new
-        else:
-            return self._fit_transform_internal(X_train_new, y_train_new, model, dataset_metadata, dataset_id)
 
 
     def predict_improvement(self, result_matrix, comparison_result_matrix, X_train, y_train):
         y_result = result_matrix["improvement"]
         result_matrix = result_matrix.drop("improvement", axis=1)
         comparison_result_matrix = comparison_result_matrix.drop("improvement", axis=1)
-
         clf = CatBoostModel()
         clf.fit(X=result_matrix, y=y_result)
-
         comparison_result_matrix.columns = comparison_result_matrix.columns.astype(str)
         comparison_result_matrix = comparison_result_matrix[result_matrix.columns]
         prediction = clf.predict(X=comparison_result_matrix)
@@ -92,14 +91,14 @@ class MetaFS:
 
 
     @staticmethod
-    def create_empty_core_matrix_for_dataset(X_train, model, dataset_id) -> pd.DataFrame:
+    def create_empty_core_matrix_for_dataset(X_train, model) -> pd.DataFrame:
         columns = ['dataset - id', 'feature - name', 'operator', 'model', 'improvement']
         comparison_result_matrix = pd.DataFrame(columns=columns)
         for feature1 in X_train.columns:
             featurename = "without - " + str(feature1)
             new_rows = pd.DataFrame(columns=columns)
             operator = "delete"
-            new_rows.loc[len(new_rows)] = [dataset_id, featurename, operator, model, 0]
+            new_rows.loc[len(new_rows)] = [111111111, featurename, operator, model, 0]
             comparison_result_matrix = pd.concat([comparison_result_matrix, pd.DataFrame(new_rows)], ignore_index=True)
         return comparison_result_matrix
 
@@ -116,20 +115,3 @@ class MetaFS:
             "task_type": task_type,
             "number_of_classes": 'N/A'
         }
-
-
-    def _run_with_limits(self, target_func, *args):
-        import signal
-
-        def timeout_handler(signum, frame):
-            raise TimeoutError(f"MetaFS exceeded time limit of {self.time_limit} seconds")
-
-        try:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(int(self.time_limit))
-            result = target_func(*args)
-            signal.alarm(0)
-            return result
-        except TimeoutError as e:
-            print(f"[MetaFS] {e}")
-            return None
