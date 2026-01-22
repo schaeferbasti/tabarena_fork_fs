@@ -25,7 +25,7 @@ class mRMR(AbstractFeatureSelector):
         self._model = model
         self._n_max_features = n_max_features
         from tabarena.benchmark.feature_selection_methods.ag.mrmr.method.mRMR import mRMR
-        self._mrmr = mRMR(model)
+        self._mrmr = mRMR()
         # Time limit
         if "time_limit" in kwargs and kwargs["time_limit"] is not None:
             time_start_fit = time.time()
