@@ -25,7 +25,7 @@ class JMI(AbstractFeatureSelector):
         self._model = model
         self._n_max_features = n_max_features
         from tabarena.benchmark.feature_selection_methods.ag.jmi.method.JMI import JMI
-        self._jmi = JMI(model)
+        self._jmi = JMI()
         # Time limit
         if "time_limit" in kwargs and kwargs["time_limit"] is not None:
             time_start_fit = time.time()
