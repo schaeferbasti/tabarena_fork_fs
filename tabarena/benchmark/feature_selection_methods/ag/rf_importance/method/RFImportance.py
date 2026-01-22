@@ -5,6 +5,7 @@ import pandas as pd
 
 import warnings
 
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 import copy
@@ -18,20 +19,23 @@ warnings.filterwarnings('ignore')
 class RFImportance:
     """RFImportance feature selector"""
 
-    def __init__(self, model):
+    def __init__(self):
         self._y = None
-        self._model = model
+        self._model = None
         self._n_max_features = None
         self._selected_features = None
-
 
     def fit_transform(self, X: pd.DataFrame, y: pd.Series, model, n_max_features, **kwargs) -> pd.DataFrame:
         self._y = y
         self._model = model
         self._n_max_features = n_max_features
-        init_feature_choice = [0] * len(X.columns)
-        X_selected = self.rf_importance(X, y, model, n_max_features, init_feature_choice, **kwargs)
-        X_selected = pd.DataFrame(X, columns=X_selected.columns, index=X.index)
+
+        feature_ranking = self.rf_importance(X, y, n_selected_features=n_max_features)
+
+        selected_features_idx = feature_ranking[:n_max_features]
+        selected_features = X.columns[selected_features_idx]
+
+        X_selected = X[selected_features]
         self._selected_features = list(X_selected.columns)
         return X_selected
 
@@ -42,15 +46,9 @@ class RFImportance:
         return X[self._selected_features]
 
 
-    def rf_importance(self, X_train, y_train, model, n_max_features, feature_indices, **kwargs):
-        return X_train
-
-
-    @staticmethod
-    def evaluate_subset(self, X, y, model):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-        model_copy = copy.deepcopy(model)
-        model_copy.params["fold_fitting_strategy"] = "sequential_local"
-        model_copy = model_copy.fit(X=X_train, y=y_train, k_fold=8)
-        self._model = model_copy
-        return model_copy.score_with_oof(y=y_train)
+    def rf_importance(self, X_train, y_train):
+        forest = RandomForestClassifier(random_state=0)
+        forest.fit(X_train, y_train)
+        importances = forest.feature_importances_
+        # std = np.std([tree.feature_importances_ for tree in forest.estimators_], axis=0)
+        return importances

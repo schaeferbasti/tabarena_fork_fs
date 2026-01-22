@@ -25,7 +25,7 @@ class RFImportance(AbstractFeatureSelector):
         self._model = model
         self._n_max_features = n_max_features
         from tabarena.benchmark.feature_selection_methods.ag.rf_importance.method.RFImportance import RFImportance
-        self._rf_importance = RFImportance(model)
+        self._rf_importance = RFImportance()
         # Time limit
         if "time_limit" in kwargs and kwargs["time_limit"] is not None:
             time_start_fit = time.time()
