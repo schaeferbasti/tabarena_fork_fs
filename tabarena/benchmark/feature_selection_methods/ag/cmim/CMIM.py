@@ -25,7 +25,7 @@ class CMIM(AbstractFeatureSelector):
         self._model = model
         self._n_max_features = n_max_features
         from tabarena.benchmark.feature_selection_methods.ag.cmim.method.CMIM import CMIM
-        self._cmim = CMIM(model)
+        self._cmim = CMIM()
         # Time limit
         if "time_limit" in kwargs and kwargs["time_limit"] is not None:
             time_start_fit = time.time()
