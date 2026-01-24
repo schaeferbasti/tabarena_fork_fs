@@ -8,6 +8,7 @@ from tabarena.benchmark.feature_selection_methods.ag.enumeration.enumeration_fs 
 from tabarena.benchmark.feature_selection_methods.ag.t_test.tTest import tTest
 from tabarena.benchmark.feature_selection_methods.ag.rf_importance.RFImportance import RFImportance
 from tabarena.benchmark.feature_selection_methods.ag.information_gain.InformationGain import InformationGain
+from tabarena.benchmark.feature_selection_methods.ag.mi.MI import MI
 from tabarena.benchmark.feature_selection_methods.ag.jmi.JMI import JMI
 from tabarena.benchmark.feature_selection_methods.ag.cmim.CMIM import CMIM
 from tabarena.benchmark.feature_selection_methods.ag.mrmr.mRMR import mRMR
