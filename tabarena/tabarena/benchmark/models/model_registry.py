@@ -10,11 +10,15 @@ from tabarena.benchmark.models.ag import (
     ExplainableBoostingMachineModel,
     KNNNewModel,
     ModernNCAModel,
+    PerpetualBoosterModel,
     RealMLPModel,
     RealTabPFNv25Model,
+    SAPRPTOSSModel,
     TabDPTModel,
     TabICLModel,
+    TabICLv2Model,
     TabMModel,
+    TabSTARModel,
     XRFMModel,
 )
 
@@ -30,6 +34,10 @@ _models_to_add = [
     XRFMModel,
     KNNNewModel,
     RealTabPFNv25Model,
+    SAPRPTOSSModel,
+    PerpetualBoosterModel,
+    TabICLv2Model,
+    TabSTARModel,
 ]
 
 for _model_cls in _models_to_add:

@@ -32,57 +32,38 @@ class PaperRun:
 
         return config_type_groups
 
-    def run_hpo_by_family(self, include_uncapped: bool = False, include_4h: bool = True, model_types: list[str] | None = None) -> pd.DataFrame:
+    def run_hpo(self, model_type: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        df_results_family_hpo_ens = self.run_ensemble_config_type(
+            config_type=model_type, fit_order="original", seed=0, n_iterations=40, time_limit=None,
+        )
+        df_results_family_hpo_ens["framework"] = f"{model_type} (tuned + ensemble)"
+
+        df_results_family_hpo = self.run_ensemble_config_type(
+            config_type=model_type, fit_order="original", seed=0, n_iterations=1, time_limit=None,
+        )
+        df_results_family_hpo["framework"] = f"{model_type} (tuned)"
+        return df_results_family_hpo, df_results_family_hpo_ens
+
+    def run_hpo_by_family(self, model_types: list[str] | None = None) -> pd.DataFrame:
         config_type_groups = self.get_config_type_groups()
 
         hpo_results_lst = []
-
-        # for model_key, model_name in [("REALMLP", "RealMLP"), ("XGB", "XGBoost"), ("CAT", "CatBoost"), ("GBM", "LightGBM"), ("RF", "RandomForest"), ("XT", "ExtraTrees")]:
-        #     realmlp_og = [c for c in config_type_groups[model_key] if c == f"{model_name}_c1_BAG_L1" or "_alt_" not in c]
-        #     realmlp_alt = [c for c in config_type_groups[model_key] if c == f"{model_name}_c1_BAG_L1" or "_alt_" in c]
-        #     config_type_groups[f"{model_key}_OG"] = realmlp_og
-        #     config_type_groups[f"{model_key}_ALT"] = realmlp_alt
 
         if model_types is None:
             model_types = list(config_type_groups.keys())
         for family in model_types:
             assert family in config_type_groups, f"Model family {family} missing from available families: {list(config_type_groups.keys())}"
 
-        if include_4h:
-            time_limit = 3600 * 4
-            # FIXME: do multiple random seeds and average
-            for family in model_types:
-                df_results_family_hpo_ens = self.run_ensemble_config_type(
-                    config_type=family, fit_order="random", seed=0, n_iterations=40, time_limit=time_limit,
-                )
-                df_results_family_hpo_ens["framework"] = f"{family} (tuned + ensemble) (4h)"
-                df_results_family_hpo = self.run_ensemble_config_type(
-                    config_type=family, fit_order="random", seed=0, n_iterations=1, time_limit=time_limit,
-                )
-                df_results_family_hpo["framework"] = f"{family} (tuned) (4h)"
-                hpo_results_lst.append(df_results_family_hpo)
-                hpo_results_lst.append(df_results_family_hpo_ens)
-
-        if include_uncapped:
-            for family in model_types:
-                df_results_family_hpo_ens = self.run_ensemble_config_type(
-                    config_type=family, fit_order="original", seed=0, n_iterations=40, time_limit=None,
-                )
-                df_results_family_hpo_ens["framework"] = f"{family} (tuned + ensemble)"
-
-                df_results_family_hpo = self.run_ensemble_config_type(
-                    config_type=family, fit_order="original", seed=0, n_iterations=1, time_limit=None,
-                )
-                df_results_family_hpo["framework"] = f"{family} (tuned)"
-                hpo_results_lst.append(df_results_family_hpo)
-                hpo_results_lst.append(df_results_family_hpo_ens)
+        for family in model_types:
+            df_results_family_hpo, df_results_family_hpo_ens = self.run_hpo(model_type=family)
+            hpo_results_lst += [df_results_family_hpo, df_results_family_hpo_ens]
 
         df_results_hpo_all = pd.concat(hpo_results_lst, ignore_index=True)
         return df_results_hpo_all
 
     def run_ensemble_config_type(
         self,
-        config_type: str,
+        config_type: str | list[str],
         n_iterations: int,
         n_configs: int = None,
         fixed_configs: list[str] | None = None,
@@ -93,7 +74,12 @@ class PaperRun:
     ) -> pd.DataFrame:
         # FIXME: Don't recompute this each call, implement `self.repo.configs(config_types=[config_type])`
         config_type_groups = self.get_config_type_groups()
-        configs = config_type_groups[config_type]
+        if isinstance(config_type, list):
+            configs = []
+            for ct in config_type:
+                configs += config_type_groups[ct]
+        else:
+            configs = config_type_groups[config_type]
 
         if fixed_configs is not None:
             for c in fixed_configs:
@@ -126,7 +112,7 @@ class PaperRun:
         else:
             method_subtype = "tuned_ensemble"
         df_results_family_hpo["method_subtype"] = method_subtype
-        df_results_family_hpo["config_type"] = config_type
+        df_results_family_hpo["config_type"] = str(config_type)
 
         method_metadata = dict(
             n_iterations=n_iterations,
@@ -147,6 +133,8 @@ class PaperRun:
         n_iterations: int = 40,
         fit_order: Literal["original", "random"] = "original",
         seed: int = 0,
+        backend_group_folds: bool = True,
+        **kwargs,
     ) -> pd.DataFrame:
         if configs is None:
             configs = self.repo.configs()
@@ -157,6 +145,8 @@ class PaperRun:
             seed=seed,
             time_limit=time_limit,
             backend=self.backend,
+            backend_group_folds=backend_group_folds,
+            **kwargs,
         )
         df_results = df_results.reset_index()
         df_results["method_type"] = "portfolio"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from huggingface_hub import hf_hub_download
 
+# TODO: move this into the model functions and use some standardized interface to download models
 if __name__ == "__main__":
     # TabPFN
     # Note: models from version 2.5 are gated! You need to accept the terms and
@@ -52,3 +53,19 @@ if __name__ == "__main__":
         print("LimiXModel not found. Skipping downloading its models.")
     else:
         LimiXModel.download_model()
+
+    # SAP RPT-1 OSS (Gated, requires accepting terms on Hugging Face!)
+    try:
+        from tabarena.benchmark.models.ag.sap_rpt_oss.sap_rpt_oss_model import pre_download_model
+    except ImportError:
+        print("SAP RPT-1 OSS model not found. Skipping downloading its model.")
+    else:
+        pre_download_model()
+
+    # TabStar Model
+    try:
+        from tabstar.tabstar_model import BaseTabSTAR
+    except ImportError:
+        print("TabStar import not found. Skipping downloading its models.")
+    else:
+        BaseTabSTAR.download_base_model()

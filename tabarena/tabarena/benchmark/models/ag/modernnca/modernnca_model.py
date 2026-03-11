@@ -334,19 +334,21 @@ class ModernNCAModel(AbstractModel):
             )
 
         if X_val is None:
+            # FIXME: make this a general utility function in autogluon that also handles
+            #  ratio better! Or handle it before _fit based on `can_refit_full`
             from autogluon.core.utils import generate_train_test_split
 
-            X_train, X_val, y_train, y_val = generate_train_test_split(
+            X, X_val, y, y_val = generate_train_test_split(
                 X=X,
                 y=y,
                 problem_type=self.problem_type,
-                test_size=0.2,
+                test_size=0.33,
                 random_state=0,
             )
 
         hyp = self._get_model_params()
         bool_to_cat = hyp.pop("bool_to_cat", True)
-        X = self.preprocess(X, is_train=True, bool_to_cat=bool_to_cat)
+        X = self.preprocess(X, y=y, is_train=True, bool_to_cat=bool_to_cat)
         if X_val is not None:
             X_val = self.preprocess(X_val)
 

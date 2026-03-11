@@ -16,7 +16,7 @@ class PaperRunTabArena(PaperRun):
         n_portfolio: int = 25,
         n_ensemble: int = 40,
         time_limit: float | None = 14400,
-        average_seeds: bool = True,
+        average_seeds: bool = False,
     ) -> pd.DataFrame:
         calibration_framework = "RF (default)"
         elo_bootstrap_rounds = 100
@@ -91,11 +91,24 @@ class PaperRunTabArena(PaperRun):
             else:
                 return configs_default[0]
         else:  # >1
-            raise ValueError(
-                f"Found {len(configs_default)} potential default configs for config_type='{config_type}', but only one should exist."
-                f"\n\tpotential defaults: {configs_default}"
-                f"\n\tconfigs={configs}"
-            )
+            remaining = [c for c in configs_default if c.endswith("_c1")]
+            if len(remaining) == 1:
+                return remaining[0]
+            elif len(remaining) > 1:
+                configs_default = remaining
+            else:
+                len_suffix = [len(c.rsplit("_c1_", maxsplit=1)[-1]) for c in configs_default]
+                min_suffix = min(len_suffix)
+                configs_default = [c for i, c in enumerate(configs_default) if len_suffix[i] == min_suffix]
+            configs_default = sorted(configs_default)
+            if len(configs_default) > 1:
+                print(
+                    f"Found {len(configs_default)} potential default configs for config_type='{config_type}', but only one should exist."
+                    f"\n\tpotential defaults: {configs_default}"
+                    f"\n\tconfigs={configs}"
+                    f"\nSelecting {configs_default[0]} as default via string sort."
+                )
+            return configs_default[0]
 
     def run_config(self, config: str) -> pd.DataFrame:
         configs = [config]
@@ -133,8 +146,6 @@ class PaperRunTabArena(PaperRun):
         if tune:
             df_results_hpo = self.run_hpo_by_family(
                 model_types=[model_type],
-                include_uncapped=True,
-                include_4h=False,
             )
         else:
             df_results_hpo = None

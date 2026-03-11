@@ -104,34 +104,26 @@ uv pip install --prerelease=allow -e ./tabarena[benchmark]
 
 ### Developer Install
 
-With this installation, you will have the latest version of AutoGluon in editable form.
-
-```
-git clone https://github.com/autogluon/autogluon.git
-./autogluon/full_install.sh
-
-git clone https://github.com/autogluon/tabarena.git
-uv pip install --prerelease=allow -e ./tabarena[benchmark]
-```
-
-Recommended workflow:
-Creating a custom virtual environment:
+Creating a custom virtual environment (if needed or use `uv sync`):
 ```
 pip install uv
 uv venv --seed --python 3.11 ~/.venvs/tabarena
 source ~/.venvs/tabarena/bin/activate
+```
 
+With this installation, you will have the latest version of AutoGluon in editable form.
+```
 git clone https://github.com/autogluon/autogluon.git
 ./autogluon/full_install.sh
 
 git clone https://github.com/autogluon/tabarena.git
-uv pip install -U -e tabarena/[benchmark]
+uv pip install --prerelease=allow -e ./tabarena/tabarena[benchmark]
 ```
 
 In PyCharm, make sure to set the directory of `tabarena/` and each `src/` subdirectory of `autogluon/` as 
 "Sources Root" for the IDE to find the imports.
 
-### Example Install + Run
+### Example Install + Run Steps
 
 Creating a project:
 ```
@@ -145,6 +137,14 @@ cd tabarena
 uv pip install --prerelease=allow -e ./tabarena[benchmark]
 cd examples/benchmarking
 python run_quickstart_tabarena.py 
+```
+
+### Install from GitHub / TabArena as a dependency 
+
+You can install TabArena from GitHub or as a dependency by using:
+
+```
+ "tabarena @ git+https://github.com/autogluon/tabarena.git#subdirectory=tabarena"
 ```
 
 # Downloading and using TabArena Artifacts
@@ -178,12 +178,12 @@ Link to NeurIPS'2025: [Conference Poster and Video](https://neurips.cc/virtual/2
 
 Bibtex entry:
 ```bibtex
-@article{erickson2025tabarena,
-  title={TabArena: A Living Benchmark for Machine Learning on Tabular Data}, 
-  author={Nick Erickson and Lennart Purucker and Andrej Tschalzev and David Holzmüller and Prateek Mutalik Desai and David Salinas and Frank Hutter},
-  year={2025},
-  journal={arXiv preprint arXiv:2506.16791},
-  url={https://arxiv.org/abs/2506.16791}, 
+@inproceedings{erickson2025tabarena,
+  title     = {TabArena: A Living Benchmark for Machine Learning on Tabular Data},
+  author    = {Erickson, Nick and Purucker, Lennart and Tschalzev, Andrej and Holzm{\"u}ller, David and Desai, Prateek Mutalik and Salinas, David and Hutter, Frank},
+  booktitle = {Proceedings of the 39th Conference on Neural Information Processing Systems (NeurIPS)},
+  year      = {2025},
+  url       = {https://arxiv.org/abs/2506.16791}
 }
 ```
 

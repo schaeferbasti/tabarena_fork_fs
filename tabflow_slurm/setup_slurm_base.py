@@ -13,16 +13,14 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from itertools import product
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Literal
 
+import pandas as pd
 import ray
 import yaml
 from tabarena.benchmark.experiment.experiment_utils import check_cache_hit
 from tabarena.utils.cache import CacheFunctionPickle
 from tabarena.utils.ray_utils import ray_map_list, to_batch_list
-
-if TYPE_CHECKING:
-    import pandas as pd
 
 
 @dataclass
@@ -34,7 +32,7 @@ class BenchmarkSetup:
 
     # Cluster Settings
     # ----------------
-    base_path = "/work/dlclarge2/purucker-tabarena/"
+    base_path: str = "/work/dlclarge2/purucker-tabarena/"
     """Base path for the project, code, and results. Within this directory, all results, code, and logs for TabArena will
     be saved. Adjust below as needed if more than one base path is desired. On a typical SLURM system, this base path
     should point to a persistent workspace that all your jobs can access.
@@ -48,22 +46,28 @@ class BenchmarkSetup:
             - slurm_out         -- contains all SLURM output logs
             - .openml-cache     -- contains the OpenML cache
     """
-    python_from_base_path: str = "venvs/tabarena_07112025/bin/python"
+    python_from_base_path: str = "venvs/tabarena_14022026/bin/python"
     """Python executable and environment to use for the SLURM jobs. This should point to a Python
     executable within a (virtual) environment."""
-    run_script_from_base_path: str = "code/tabarena_new/tabarena/tabflow_slurm/run_tabarena_experiment.py"
+    run_script_from_base_path: str = (
+        "code/tabarena_new/tabarena/tabflow_slurm/run_tabarena_experiment.py"
+    )
     """Python script to run the benchmark. This should point to the script that runs the benchmark
     for TabArena."""
-    openml_cache_from_base_path: str = ".openml-cache"
-    """OpenML cache directory. This is used to store dataset and tasks data from OpenML."""
-    tabrepo_cache_dir_from_base_path: str = "input_data/tabrepo"
-    """TabRepo cache directory."""
-    slurm_log_output_from_base_path: str = "slurm_out/new_runs"
-    """Directory for the SLURM output logs. This is used to store the output logs from the
-    SLURM jobs."""
+    openml_cache_from_base_path: str | Literal["auto"] = ".openml-cache"
+    """OpenML cache directory. This is used to store dataset and tasks data from OpenML.
+    
+    If "auto", we use the default cache from OpenML. 
+    If any other string, this is interpreted as the path to the folder for a custom OpenML cache.
+    """
+    slurm_log_output_from_base_path: str = "slurm_out/"
+    """Directory for the SLURM output logs. In this folder a `benchmark_name` folder will be created 
+    and used to store the output logs from the SLURM jobs."""
     output_dir_base_from_base_path: str = "output/"
     """Output directory for the benchmark. In this folder a `benchmark_name` folder will be created."""
-    configs_path_from_base_path: str = "code/tabarena_new/tabarena/tabflow_slurm/benchmark_configs_"
+    configs_path_from_base_path: str = (
+        "code/tabarena_new/tabarena/tabflow_slurm/benchmark_configs_"
+    )
     """YAML file with the configs to run. Generated from parameters above in code below.
     File path is f"{self.base_path}{self.configs_path_from_base_path}{self.benchmark_name}.yaml"
     """
@@ -72,13 +76,20 @@ class BenchmarkSetup:
      to run)."""
     slurm_gpu_partition: str = "alldlc2_gpu-l40s"
     """SLURM partition to use for GPU jobs. Adjust as needed for your cluster setup."""
-    slurm_cpu_partition: str = "bosch_cpu-cascadelake"
+    slurm_cpu_partition: str = "alldlc2_cpu-epyc9655"
     """SLURM partition to use for CPU jobs. Adjust as needed for your cluster setup."""
-
+    slurm_extra_gres: str | None = "localtmp:100"
+    """Extra SLURM gres to use for the jobs. Adjust as needed for your cluster setup."""
+    slurm_mem_per_handle: bool = True
+    """If True, we set SLURM memory per CPU/GPU. If False, we set SLURM memory per job."""
     # Task/Data Settings
     # ------------------
-    custom_metadata: pd.DataFrame | None = None
+    # TODO: update metadata and usage for non-IID tasks that are not fold-based in the future.
+    custom_metadata: pd.DataFrame | str | None = None
     """Custom metadata to use for defining the tasks and datasets to run.
+
+    If str, it is assumed to be a path to a CSV file with the metadata.
+    If None, the default curated TabArena metadata is used.
 
     The metadata must have the following columns:
         "tabarena_num_repeats": int
@@ -122,9 +133,13 @@ class BenchmarkSetup:
     """Memory/RAM limit for the SLURM jobs in GB. The memory limit available on the node."""
     time_limit: int = 3600
     """Time limit for each fit (all 8 folds) of a model in seconds. By default, 3600 seconds is used."""
+    time_limit_overhead: int = 1
+    """Overhead time in hours to add to the SLURM time limit to account for
+    job scheduling and other non-model fitting overhead."""
     n_random_configs: int = 200
     """Number of random hyperparameter configurations to run for each model"""
-    models: list[tuple[str, int | str]] = field(default_factory=list)
+    # TODO: make less hacky and document ag experiment usage
+    models: list[tuple[str, int | str | dict]] = field(default_factory=list)
     """List of models to run in the benchmark with metadata.
     Metadata keys from left to right:
         - model name: str
@@ -132,6 +147,7 @@ class BenchmarkSetup:
             Some special cases are:
                 - If 0, only the default configuration is run.
                 - If "all", `n_random_configs`-many configurations are run.
+                - If dict, kwargs for AGExperiment
 
     Remove or comment out models to that you do not want to run.
     Examples from the current state of TabArena are:
@@ -214,6 +230,12 @@ class BenchmarkSetup:
             }
         }
     """
+    model_agnostic_preprocessing: bool = True
+    """Whether to use model-agnostic preprocessing or not.
+    By default, we use AutoGluon's automatic preprocessing for all models.
+    This can be disabled by setting this to False. Warning: the model then needs
+    to be able to handle this!
+    """
 
     # Misc Settings
     # -------------
@@ -222,7 +244,9 @@ class BenchmarkSetup:
     cache_cls: CacheFunctionPickle = CacheFunctionPickle
     """How to save the cache. Pickle is the current recommended default. This option and the two
     below must be in sync with the cache method in run_script."""
-    cache_cls_kwargs: dict = field(default_factory=lambda: {"include_self_in_call": True})
+    cache_cls_kwargs: dict = field(
+        default_factory=lambda: {"include_self_in_call": True}
+    )
     """Arguments for the cache class. This is used to setup the cache class for the benchmark."""
     cache_path_format: str = "name_first"
     """Path format for the cache. This is used to setup the cache path format for the benchmark."""
@@ -271,6 +295,8 @@ class BenchmarkSetup:
     Set this is to some string value to make sure you can run parallel jobs for the same
     benchmark name.
     """
+    verbosity: int = 2
+    """Verbosity level for logging and printing."""
 
     @property
     def _safe_benchmark_name(self) -> str:
@@ -283,7 +309,9 @@ class BenchmarkSetup:
     @property
     def slurm_job_json(self) -> str:
         """JSON file with the job data to run used by SLURM. This is generated from the configs and metadata."""
-        return f"slurm_run_data_{self._safe_benchmark_name}.json"
+        # TODO: change UX for config and slurm paths.
+        path_to_config_file = str(Path(self.configs_path_from_base_path).parent) + "/"
+        return f"{self.base_path}{path_to_config_file}slurm_run_data_{self._safe_benchmark_name}.json"
 
     @property
     def configs(self) -> str:
@@ -293,7 +321,9 @@ class BenchmarkSetup:
     @property
     def output_dir(self) -> str:
         """Output directory for the benchmark."""
-        return self.base_path + self.output_dir_base_from_base_path + self.benchmark_name
+        return (
+            self.base_path + self.output_dir_base_from_base_path + self.benchmark_name
+        )
 
     @property
     def metadata(self) -> str:
@@ -313,17 +343,16 @@ class BenchmarkSetup:
     @property
     def openml_cache(self) -> str:
         """OpenML cache directory."""
+        if self.openml_cache_from_base_path == "auto":
+            return self.openml_cache_from_base_path
         return self.base_path + self.openml_cache_from_base_path
-
-    @property
-    def tabrepo_cache_dir(self) -> str:
-        """TabRepo cache directory."""
-        return self.base_path + self.tabrepo_cache_dir_from_base_path
 
     @property
     def slurm_log_output(self) -> str:
         """Directory for the SLURM output logs."""
-        return self.base_path + self.slurm_log_output_from_base_path
+        return (
+            self.base_path + self.slurm_log_output_from_base_path + self.benchmark_name
+        )
 
     @property
     def slurm_base_command(self):
@@ -342,26 +371,40 @@ class BenchmarkSetup:
         partition = self.slurm_gpu_partition if is_gpu_job else self.slurm_cpu_partition
         partition = "--partition=" + partition
 
-        gres = f"gpu:{self.num_gpus},localtmp:100" if is_gpu_job else "localtmp:100"
-        gres = f"--gres={gres}"
+        gres = f"gpu:{self.num_gpus}" if is_gpu_job else ""
+        if self.slurm_extra_gres:
+            if len(gres) > 0:
+                gres += ","
+            gres += self.slurm_extra_gres
+        gres = f"--gres={gres}" if len(gres) > 0 else None
 
-        time_in_h = self.time_limit // 3600 * self.configs_per_job + 1
+        time_in_h = (
+            self.time_limit // 3600 * self.configs_per_job + self.time_limit_overhead
+        )
         time_in_h = f"--time={time_in_h}:00:00"
         cpus = f"--cpus-per-task={self.num_cpus}"
-        if is_gpu_job:
-            mem = f"--mem-per-gpu={self.memory_limit}G"
+        if self.slurm_mem_per_handle:
+            if is_gpu_job:
+                mem = f"--mem-per-gpu={self.memory_limit // self.num_gpus}G"
+            else:
+                mem = f"--mem-per-cpu={self.memory_limit // self.num_cpus}G"
         else:
-            mem = f"--mem-per-cpu={self.memory_limit//self.num_cpus}G"
+            mem = f"--mem={self.memory_limit}G"
         script = str(Path(__file__).parent / self.slurm_script)
 
-        return f"{partition} {gres} {time_in_h} {cpus} {mem} {script}"
+        slurm_logs = f"--output={self.slurm_log_output}/%A/slurm-%A_%a.out"
+
+        cmd_arg = f"{partition}"
+        if gres is not None:
+            cmd_arg += f" {gres}"
+        return f"{cmd_arg} {time_in_h} {cpus} {mem} {slurm_logs} {script}"
 
     def get_jobs_to_run(self):  # noqa: C901
         """Determine all jobs to run by checking the cache and filtering
         invalid jobs.
         """
-        Path(self.openml_cache).mkdir(parents=True, exist_ok=True)
-        Path(self.tabrepo_cache_dir).mkdir(parents=True, exist_ok=True)
+        if self.openml_cache != "auto":
+            Path(self.openml_cache).mkdir(parents=True, exist_ok=True)
         Path(self.output_dir).mkdir(parents=True, exist_ok=True)
         Path(self.slurm_log_output).mkdir(parents=True, exist_ok=True)
 
@@ -371,8 +414,14 @@ class BenchmarkSetup:
             )
 
             metadata = load_curated_task_metadata()
-        else:
+        elif isinstance(self.custom_metadata, pd.DataFrame):
             metadata = deepcopy(self.custom_metadata)
+        elif isinstance(self.custom_metadata, str):
+            metadata = pd.read_csv(self.custom_metadata)
+        else:
+            raise ValueError(
+                f"Invalid custom_metadata type: {type(self.custom_metadata)}."
+            )
 
         self.generate_configs_yaml()
         # Read YAML file and get the number of configs
@@ -382,15 +431,27 @@ class BenchmarkSetup:
         def yield_all_jobs():
             for row in metadata.itertuples():
                 task_id = row.task_id
-                n_samples_train_per_fold = int(row.num_instances - int(row.num_instances / row.num_folds))
+                if hasattr(row, "n_samples_train_per_fold"):
+                    n_samples_train_per_fold = row.n_samples_train_per_fold
+                else:
+                    # Fallback to estimating the number of training samples per fold
+                    n_samples_train_per_fold = int(
+                        row.num_instances - int(row.num_instances / row.num_folds)
+                    )
                 n_features = int(row.num_features)
-                n_classes = int(row.num_classes) if row.problem_type in ["binary", "multiclass"] else 0
+                n_classes = (
+                    int(row.num_classes)
+                    if row.problem_type in ["binary", "multiclass"]
+                    else 0
+                )
 
                 # Quick, model independent skip.
                 if row.problem_type not in self.problem_types_to_run:
                     continue
 
-                repeats_folds = product(range(int(row.tabarena_num_repeats)), range(int(row.num_folds)))
+                repeats_folds = product(
+                    range(int(row.tabarena_num_repeats)), range(int(row.num_folds))
+                )
                 if self.tabarena_lite:  # Filter to only first split.
                     repeats_folds = list(repeats_folds)[:1]
 
@@ -429,7 +490,9 @@ class BenchmarkSetup:
             track_progress=True,
             tqdm_kwargs={"desc": "Checking Cache and Filter Invalid Jobs"},
         )
-        output = [item for sublist in output for item in sublist]  # Flatten the batched list
+        output = [
+            item for sublist in output for item in sublist
+        ]  # Flatten the batched list
         to_run_job_map = {}
         for run_job, job_data in zip(output, jobs_to_check, strict=True):
             if run_job:
@@ -472,9 +535,15 @@ class BenchmarkSetup:
         from tabarena.models.utils import get_configs_generator_from_name
 
         experiments_lst = []
-        method_kwargs = {}
+        method_kwargs = {
+            "init_kwargs": {"verbosity": self.verbosity},
+        }
         if self.model_artifacts_base_path is not None:
-            method_kwargs["init_kwargs"] = {"default_base_path": self.model_artifacts_base_path}
+            method_kwargs["init_kwargs"]["default_base_path"] = (
+                self.model_artifacts_base_path
+            )
+        if not self.model_agnostic_preprocessing:
+            method_kwargs["fit_kwargs"] = {"feature_generator": None}
 
         print(
             "Generating experiments for models...",
@@ -491,7 +560,33 @@ class BenchmarkSetup:
                 pipeline_method_kwargs["preprocessing_pipeline"] = preprocessing_name
                 name_id_suffix = f"_{preprocessing_name}"
 
-            for model_name, n_configs in self.models:
+            for model_name, n_configs_or_kwargs in self.models:
+                # TODO: make less hacky
+                if model_name.startswith("AutoGluon"):
+                    from tabarena.benchmark.experiment.experiment_constructor import (
+                        AGExperiment,
+                    )
+
+                    agexp_kwargs = n_configs_or_kwargs
+
+                    for key in ["fit_kwargs", "init_kwargs"]:
+                        if key not in agexp_kwargs:
+                            agexp_kwargs[key] = {}
+                        if key in pipeline_method_kwargs:
+                            agexp_kwargs[key].update(pipeline_method_kwargs[key])
+                    agexp_kwargs["fit_kwargs"]["time_limit"] = self.time_limit
+
+                    experiments_lst.append(
+                        [
+                            AGExperiment(
+                                name=model_name,
+                                **agexp_kwargs,
+                            )
+                        ]
+                    )
+                    continue
+
+                n_configs = n_configs_or_kwargs
                 if isinstance(n_configs, str) and n_configs == "all":
                     n_configs = self.n_random_configs
                 elif not isinstance(n_configs, int):
@@ -541,7 +636,6 @@ class BenchmarkSetup:
             "run_script": self.run_script,
             "openml_cache_dir": self.openml_cache,
             "configs_yaml_file": self.configs,
-            "tabrepo_cache_dir": self.tabrepo_cache_dir,
             "output_dir": self.output_dir,
             "num_cpus": self.num_cpus,
             "num_gpus": self.num_gpus,
@@ -552,7 +646,7 @@ class BenchmarkSetup:
         }
         return {"defaults": default_args, "jobs": jobs}
 
-    def setup_jobs(self):
+    def setup_jobs(self) -> str:
         """Setup the jobs to run by generating the SLURM job JSON file."""
         jobs_dict = self.get_jobs_dict()
         n_jobs = len(jobs_dict["jobs"])
@@ -560,17 +654,19 @@ class BenchmarkSetup:
             print("No jobs to run.")
             Path(self.slurm_job_json).unlink(missing_ok=True)
             Path(self.configs).unlink(missing_ok=True)
-            return
+            return "N/A"
 
         with open(self.slurm_job_json, "w") as f:
             json.dump(jobs_dict, f)
 
+        run_command = f"sbatch --array=0-{n_jobs - 1}%100 {self.slurm_base_command} {self.slurm_job_json}"
         print(
             f"##### Setup Jobs for {self._safe_benchmark_name}"
             "\nRun the following command to start the jobs:"
-            f"\nsbatch --array=0-{n_jobs - 1}%100 {self.slurm_base_command} {self.slurm_job_json}"
+            f"\n{run_command}"
             "\n"
         )
+        return run_command
 
     @property
     def models_to_constraints(self) -> dict[str, dict[str, int]]:
@@ -659,12 +755,20 @@ class BenchmarkSetup:
         if (max_n_features is not None) and (n_features > max_n_features):
             return False
 
-        max_n_samples_train_per_fold = model_constraints.get("max_n_samples_train_per_fold", None)
-        if (max_n_samples_train_per_fold is not None) and (n_samples_train_per_fold > max_n_samples_train_per_fold):
+        max_n_samples_train_per_fold = model_constraints.get(
+            "max_n_samples_train_per_fold", None
+        )
+        if (max_n_samples_train_per_fold is not None) and (
+            n_samples_train_per_fold > max_n_samples_train_per_fold
+        ):
             return False
 
-        min_n_samples_train_per_fold = model_constraints.get("min_n_samples_train_per_fold", None)
-        if (min_n_samples_train_per_fold is not None) and (n_samples_train_per_fold < min_n_samples_train_per_fold):
+        min_n_samples_train_per_fold = model_constraints.get(
+            "min_n_samples_train_per_fold", None
+        )
+        if (min_n_samples_train_per_fold is not None) and (
+            n_samples_train_per_fold < min_n_samples_train_per_fold
+        ):
             return False
 
         max_n_classes = model_constraints.get("max_n_classes", None)
@@ -701,11 +805,18 @@ def should_run_job(
     try:
         task_id = int(task_id)
     except ValueError:
-        task_id = task_id.split("|", 2)[1]  # Extract the local task ID if it is a UserTask.task_id_str
+        task_id = task_id.split("|", 2)[
+            1
+        ]  # Extract the local task ID if it is a UserTask.task_id_str
 
     # Filter out-of-constraints datasets
+    if "model_cls" in config:
+        model_cls = config["model_cls"]
+    else:
+        assert config["name"].startswith("AutoGluon")
+        model_cls = "AutoGluon"
     if not BenchmarkSetup.are_model_constraints_valid(
-        model_cls=config["model_cls"],
+        model_cls=model_cls,
         n_features=input_data["n_features"],
         n_classes=input_data["n_classes"],
         n_samples_train_per_fold=input_data["n_samples_train_per_fold"],

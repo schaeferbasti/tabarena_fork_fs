@@ -17,6 +17,7 @@ class TrainingJobResourceManager:
         self.jobs_logged = 0
         self.total_jobs = 0
         self.launched_jobs = 0
+        self.time_start = time.time()
 
 
     def add_job(self, job_name, cache_path):
@@ -60,13 +61,15 @@ class TrainingJobResourceManager:
                 elif job_status == 'Stopped':
                     self.job_statuses['Stopped'] += 1
 
-                save_training_job_logs(
-                    self.sagemaker_client, 
-                    s3_client, 
-                    job_name, 
-                    s3_bucket, 
-                    self.job_cache_paths[job_name]
-                )
+                # TODO: The below logic is slow, so it is disabled for now
+                if False:
+                    save_training_job_logs(
+                        self.sagemaker_client,
+                        s3_client,
+                        job_name,
+                        s3_bucket,
+                        self.job_cache_paths[job_name]
+                    )
                 self.jobs_logged += 1
                 completed_jobs.append(job_name)
 
@@ -103,6 +106,8 @@ class TrainingJobResourceManager:
 
     def _print_status(self):
         """Print the current status of all jobs."""
+        time_cur = time.time()
+        time_elapsed = time_cur - self.time_start
         print("\r", end="")
         print(f"\nProcessed Jobs: {self.launched_jobs}/{self.total_jobs} | "
               f"[In Progress: {self.job_statuses['InProgress']}, "
@@ -110,6 +115,7 @@ class TrainingJobResourceManager:
               f"Failed: {self.job_statuses['Failed']}, "
               f"Stopped: {self.job_statuses['Stopped']}] | "
               f"Jobs Logged: {self.jobs_logged} | "
+              f"Time Elapsed: {time_elapsed:7.1f}s | "
               f"Concurrency: {len(self.job_names)}/{self.max_concurrent_jobs}", end="")
         print()
 

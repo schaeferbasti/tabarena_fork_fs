@@ -1,13 +1,11 @@
 #!/bin/bash
 #SBATCH --ntasks=1
 #SBATCH --job-name=tabarena_run
-#SBATCH --export=ALL
+#SBATCH --export=ALL,TABPFN_DISABLE_TELEMETRY=1
 #SBATCH --requeue
 #SBATCH --propagate=NONE
-#SBATCH -o /work/dlclarge2/purucker-tabarena/slurm_out/new_runs/%A/slurm-%A_%a.out
-#SBATCH -e /work/dlclarge2/purucker-tabarena/slurm_out/new_runs/%A/slurm-%A_%a.out
 
-#### Set by outer script
+#### Set by outer script (for example on the university cluster):
 ## For GPU
 ##SBATCH --gres=gpu:1,localtmp:100
 ##SBATCH --partition=alldlc2_gpu-l40s # --partition=mldlc2_gpu-h200
@@ -42,7 +40,6 @@ PYTHON_PATH=$(jq -r '.defaults.python' "$JSON_FILE")
 RUNSCRIPT=$(jq -r '.defaults.run_script' "$JSON_FILE")
 OPENML_CACHE_DIR=$(jq -r '.defaults.openml_cache_dir' "$JSON_FILE")
 CONFIGS_YAML_FILE=$(jq -r '.defaults.configs_yaml_file' "$JSON_FILE")
-TABREPO_CACHE_DIR=$(jq -r '.defaults.tabrepo_cache_dir' "$JSON_FILE")
 OUTPUT_DIR=$(jq -r '.defaults.output_dir' "$JSON_FILE")
 NUM_CPUS=$(jq -r '.defaults.num_cpus' "$JSON_FILE")
 NUM_GPUS=$(jq -r '.defaults.num_gpus' "$JSON_FILE")
@@ -55,7 +52,6 @@ echo "Python Path: $PYTHON_PATH"
 echo "Run Script: $RUNSCRIPT"
 echo "OpenML Cache Directory: $OPENML_CACHE_DIR"
 echo "Configs YAML File: $CONFIGS_YAML_FILE"
-echo "Tabrepo Cache Directory: $TABREPO_CACHE_DIR"
 echo "Output Directory: $OUTPUT_DIR"
 echo "Number of CPUs: $NUM_CPUS"
 echo "Number of GPUs: $NUM_GPUS"
@@ -91,7 +87,6 @@ for CI in "${CONFIG_ARRAY[@]}"; do
         --config_index $CI \
         --configs_yaml_file $CONFIGS_YAML_FILE \
         --openml_cache_dir $OPENML_CACHE_DIR \
-        --tabrepo_cache_dir $TABREPO_CACHE_DIR \
         --output_dir $OUTPUT_DIR \
         --num_cpus $NUM_CPUS \
         --num_gpus $NUM_GPUS \

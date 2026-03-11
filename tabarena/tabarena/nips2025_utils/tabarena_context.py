@@ -7,6 +7,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from tabarena.website.website_format import format_leaderboard
 from tabarena.benchmark.result import BaselineResult
 from tabarena.utils.pickle_utils import fetch_all_pickles
 from tabarena.nips2025_utils.fetch_metadata import load_task_metadata
@@ -25,6 +26,7 @@ from tabarena.nips2025_utils.eval_all import evaluate_all
 _methods_paper = [
     "AutoGluon_v140_bq_4h8c",
     "AutoGluon_v140_eq_4h8c",
+    "AutoGluon_v150_eq_4h8c",
     # "Portfolio-N200-4h",
 
     "CatBoost",
@@ -55,6 +57,8 @@ _methods_paper = [
     "BetaTabPFN_GPU",
     "TabFlex_GPU",
     "RealTabPFN-v2.5",
+    "SAP-RPT-OSS",
+    "TabICLv2",
 ]
 
 
@@ -96,7 +100,7 @@ class TabArenaContext:
 
         if extra_methods:
             for method_metadata in extra_methods:
-                assert method_metadata.method not in methods
+                assert method_metadata.method not in methods, f"{method_metadata.method} already in methods..."
                 methods.append(method_metadata.method)
                 method_metadata_lst.append(method_metadata)
 
@@ -110,11 +114,12 @@ class TabArenaContext:
         subset: str | list[str] | None = None,
         folds: list[int] | None = None,
         score_on_val: bool = False,
-        average_seeds: bool = True,
+        average_seeds: bool = False,
         fillna: str | pd.DataFrame | None = "RF (default)",
         remove_imputed: bool = False,
         tmp_treat_tasks_independently: bool = False,
         leaderboard_kwargs: dict | None = None,
+        **kwargs,
     ) -> pd.DataFrame:
         from tabarena.nips2025_utils.compare import compare_on_tabarena
         return compare_on_tabarena(
@@ -130,6 +135,7 @@ class TabArenaContext:
             remove_imputed=remove_imputed,
             tmp_treat_tasks_independently=tmp_treat_tasks_independently,
             leaderboard_kwargs=leaderboard_kwargs,
+            **kwargs,
         )
 
     @property
@@ -199,16 +205,162 @@ class TabArenaContext:
         repo.to_dir(path_processed)
         return path_processed
 
+    # FIXME: This is a hacky approach, refactor
+    def generate_hpo_trajectories(
+        self,
+        methods: list[str | MethodMetadata],
+        n_configs: list[int | None] | str = "auto",
+        seeds: int | list[int] = 20,
+        n_iterations: int = 40,
+        default_method: str = None,
+        always_include_default: bool = True,
+        fit_order: Literal["original", "random"] = "random",
+        time_limit: float | None = None,
+        backend: Literal["ray", "native"] = "ray",
+        repo: EvaluationRepository | None = None,
+        folds: list[int] | None = None,
+        ta_name: str = None,
+        ta_suite: str = None,
+        display_name: str = None,
+    ) -> pd.DataFrame:
+        methods: list[MethodMetadata] = [self.method_metadata(m) if isinstance(m, str) else m for m in methods]
+        if repo is None:
+            repo = self.load_repo(methods=methods)
+            if folds is not None:
+                repo = repo.subset(folds=folds)
+        if not default_method:
+            default_method = methods[0]
+        else:
+            for method in methods:
+                if method.method == default_method:
+                    default_method = method
+                    break
+        hpo_trajectory = default_method.generate_hpo_trajectories(
+            n_configs=n_configs,
+            repo=repo,
+            seeds=seeds,
+            n_iterations=n_iterations,
+            always_include_default=always_include_default,
+            fit_order=fit_order,
+            time_limit=time_limit,
+            backend=backend,
+            config_type=repo.config_types(),
+            cache=False,
+        )
+
+        hpo_trajectory["ta_name"] = ta_name
+        hpo_trajectory["ta_suite"] = ta_suite
+        hpo_trajectory["display_name"] = display_name
+        return hpo_trajectory
+
+    def combine_hpo(
+        self,
+        methods: list[str],
+        new_config_type: str,
+        ta_name: str,
+        ta_suite: str,
+        method_default: str | None = None,
+        repo: EvaluationRepository | None = None,
+        n_configs: int | None = None,
+        time_limit: float | None = None,
+        fit_order: Literal["original", "random"] = "original",
+        default_always_first: bool = True,
+        seed: int = 0,
+    ) -> pd.DataFrame:
+        """
+        Perform HPO across multiple methods
+
+        Returns default, tuned, and tuned + ensembled results.
+        """
+        if method_default is None:
+            method_default = methods[0]
+        if repo is None:
+            repo = self.load_repo(methods=methods)
+
+        config_type_default = self.method_metadata(method_default).config_type
+        simulator = PaperRunTabArena(repo=repo, backend=self.backend)
+        config_default = simulator._config_default(config_type=config_type_default, use_first_if_missing=True)
+        if config_default is not None:
+            default = simulator.run_config_default(model_type=config_type_default)
+            default = default.rename(columns={"framework": "method"})
+            default["ta_name"] = ta_name
+            default["ta_suite"] = ta_suite
+            default["config_type"] = new_config_type
+            default["method"] = f"{new_config_type} (default)"
+        else:
+            default = None
+
+        if default_always_first and config_default:
+            fixed_configs = [config_default]
+        else:
+            fixed_configs = None
+
+        tuned = self.run_hpo(
+            method=methods,
+            repo=repo,
+            n_iterations=1,
+            n_configs=n_configs,
+            time_limit=time_limit,
+            fit_order=fit_order,
+            seed=seed,
+            fixed_configs=fixed_configs,
+        )
+
+        tuned_ens = self.run_hpo(
+            method=methods,
+            repo=repo,
+            n_iterations=40,
+            n_configs=n_configs,
+            time_limit=time_limit,
+            fit_order=fit_order,
+            seed=seed,
+            fixed_configs=fixed_configs,
+        )
+
+        tuned["ta_name"] = ta_name
+        tuned["ta_suite"] = ta_suite
+        tuned["config_type"] = new_config_type
+        tuned["method"] = f"{new_config_type} (tuned)"
+        tuned_ens["ta_name"] = ta_name
+        tuned_ens["ta_suite"] = ta_suite
+        tuned_ens["config_type"] = new_config_type
+        tuned_ens["method"] = f"{new_config_type} (tuned + ensemble)"
+
+        results_hpo_comb = pd.concat([
+            default,
+            tuned,
+            tuned_ens,
+        ], ignore_index=True)
+
+        return results_hpo_comb
+
     def run_hpo(
         self,
-        method: str,
-        repo: EvaluationRepository,
+        method: str | list[str],
+        repo: EvaluationRepository = None,
         n_iterations: int = 40,
         n_configs: int | None = None,
         time_limit: float | None = None,
         fit_order: Literal["original", "random"] = "original",
         seed: int = 0,
+        **kwargs,
     ) -> pd.DataFrame:
+        if not isinstance(method, list):
+            method = [method]
+        valid_methods = self.methods
+        if repo is None:
+            repo = self.load_repo(methods=method)
+        method_new = []
+        for m in method:
+            if m in valid_methods:
+                method_metadata = self.method_metadata(method=m)
+                config_type = method_metadata.config_type
+            else:
+                config_type = m
+            method_new.append(config_type)
+        method = method_new
+        if len(method) == 1:
+            method = method[0]
         simulator = PaperRunTabArena(repo=repo, backend=self.backend)
         df_results_family_hpo = simulator.run_ensemble_config_type(
             config_type=method,
@@ -217,11 +369,16 @@ class TabArenaContext:
             time_limit=time_limit,
             fit_order=fit_order,
             seed=seed,
+            **kwargs,
         )
         df_results_family_hpo = df_results_family_hpo.rename(columns={
             "framework": "method",
         })
-        df_results_family_hpo["method"] = f"HPO-N{n_configs}-{method}"
+        name = "HPO"
+        if n_configs is not None:
+            name += f"-N{n_configs}"
+        name += f"-{method}"
+        df_results_family_hpo["method"] = name
         return df_results_family_hpo
 
     # FIXME: WIP
@@ -253,6 +410,7 @@ class TabArenaContext:
         configs: list[str],
         config_fallback: str | None = None,
         repo: EvaluationRepositoryCollection = None,
+        **kwargs,
     ):
         if repo is None:
             repo = self.load_repo(config_fallback=config_fallback)
@@ -260,6 +418,7 @@ class TabArenaContext:
 
         results = simulator.evaluate_ensembles(
             configs=configs,
+            **kwargs,
         )
 
         results = results.rename(columns={"framework": "method"})
@@ -295,7 +454,7 @@ class TabArenaContext:
         n_portfolio: int = 25,
         n_ensemble: int = 40,
         time_limit: float | None = 14400,
-        average_seeds: bool = True,
+        average_seeds: bool = False,
     ):
         if repo is None:
             repo = self.load_repo(methods=methods, config_fallback=config_fallback)
@@ -331,16 +490,19 @@ class TabArenaContext:
         )
         return cur_result
 
-    def simulate_portfolio(self, methods: list[str], config_fallback: str, repo: EvaluationRepositoryCollection = None):
+    def simulate_portfolio(self, methods: list[str], config_fallback: str, repo: EvaluationRepositoryCollection = None, **kwargs):
         if repo is None:
             repo = self.load_repo(methods=methods, config_fallback=config_fallback)
         simulator = PaperRunTabArena(repo=repo, backend=self.backend)
 
         df_results_n_portfolio = []
-        n_portfolios = [200]
+        if "n_portfolios" not in kwargs:
+            n_portfolios = [200]
+        else:
+            n_portfolios = kwargs.pop("n_portfolios")
         for n_portfolio in n_portfolios:
             df_results_n_portfolio.append(
-                simulator.run_zs(n_portfolios=n_portfolio, n_ensemble=None, n_ensemble_in_name=False))
+                simulator.run_zs(n_portfolios=n_portfolio, n_ensemble=None, n_ensemble_in_name=False, **kwargs))
         results = pd.concat(df_results_n_portfolio, ignore_index=True)
         return results
 
@@ -527,6 +689,24 @@ class TabArenaContext:
             save_path=Path(save_path),
         )
 
+    def leaderboard_to_website_format(
+        self,
+        leaderboard: pd.DataFrame,
+        **kwargs,
+    ) -> pd.DataFrame:
+        method_metadata_info = self.method_metadata_collection.info()
+        method_metadata_info = method_metadata_info.rename(
+            columns={
+                "method": "ta_name",
+                "artifact_name": "ta_suite",
+            }
+        )
+        return format_leaderboard(
+            df_leaderboard=leaderboard,
+            method_metadata_info=method_metadata_info,
+            **kwargs,
+        )
+
     def load_config_results_multi(
         self,
         method_metadata_lst: list[MethodMetadata] | None = None,
@@ -628,7 +808,7 @@ class TabArenaContext:
             if not invalid.empty:
                 raise AssertionError(
                     f"Found a method with multiple values for column {c} (must be unique):\n"
-                    f"{groupby_method_invalid.value_counts()}"
+                    f"{groupby_method_invalid.value_counts(dropna=False)}"
                 )
 
             # Using .first() is safe because nunique == 1 for every method
