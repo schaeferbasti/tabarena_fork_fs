@@ -46,7 +46,7 @@ class BenchmarkSetup:
             - slurm_out         -- contains all SLURM output logs
             - .openml-cache     -- contains the OpenML cache
     """
-    python_from_base_path: str = "venvs/tabarena_14022026/bin/python"
+    python_from_base_path: str = "venvs/tabarena_25032026/bin/python"
     """Python executable and environment to use for the SLURM jobs. This should point to a Python
     executable within a (virtual) environment."""
     run_script_from_base_path: str = (
@@ -56,8 +56,8 @@ class BenchmarkSetup:
     for TabArena."""
     openml_cache_from_base_path: str | Literal["auto"] = ".openml-cache"
     """OpenML cache directory. This is used to store dataset and tasks data from OpenML.
-    
-    If "auto", we use the default cache from OpenML. 
+
+    If "auto", we use the default cache from OpenML.
     If any other string, this is interpreted as the path to the folder for a custom OpenML cache.
     """
     slurm_log_output_from_base_path: str = "slurm_out/"
@@ -82,6 +82,8 @@ class BenchmarkSetup:
     """Extra SLURM gres to use for the jobs. Adjust as needed for your cluster setup."""
     slurm_mem_per_handle: bool = True
     """If True, we set SLURM memory per CPU/GPU. If False, we set SLURM memory per job."""
+    slurm_exclusive_node: bool = False
+    """If True, we assume we can use all resources on the node."""
     # Task/Data Settings
     # ------------------
     # TODO: update metadata and usage for non-IID tasks that are not fold-based in the future.
@@ -125,14 +127,22 @@ class BenchmarkSetup:
     # Benchmark Settings
     # ------------------
     """Problem types to run in the benchmark. Adjust as needed to run only specific problem types."""
-    num_cpus: int = 8
-    """Number of CPUs to use for the SLURM jobs. The number of CPUs available on the node."""
+    num_cpus: int | None = 8
+    """Number of CPUs to use for the SLURM jobs. The number of CPUs available on the node.
+    If None, use all CPUs available on the node."""
     num_gpus: int = 0
     """Number of GPUs to use for the SLURM jobs. The number of GPUs available on the node."""
-    memory_limit: int = 32
-    """Memory/RAM limit for the SLURM jobs in GB. The memory limit available on the node."""
+    memory_limit: int | None = 32
+    """Memory/RAM limit for the SLURM jobs in GB. The memory limit available on the node.
+    If None, use all memory available on the node.
+    """
     time_limit: int = 3600
     """Time limit for each fit (all 8 folds) of a model in seconds. By default, 3600 seconds is used."""
+    time_limit_with_preprocessing: bool = False
+    """Whether the preprocessing should influence the fit time of the model.
+        If False (default), we stop fitting a model after `time_limit`.
+        If True, we stop fitting a model after `time_limit - time_fore_preprocessing`.
+    """
     time_limit_overhead: int = 1
     """Overhead time in hours to add to the SLURM time limit to account for
     job scheduling and other non-model fitting overhead."""
@@ -185,8 +195,8 @@ class BenchmarkSetup:
     setup_ray_for_slurm_shared_resources_environment: bool = True
     """Prepare Ray for a SLURM shared resource environment. This is used to setup Ray for SLURM
     shared resources. Recommended to set to True if sequential_local_fold_fitting is False."""
-    preprocessing_pieplines: list[str] = field(default_factory=lambda: ["default"])
-    """EXPERIMENTAL, REQUIRES A CUSTOM AUTOGLUON BRANCH!
+    preprocessing_pipelines: list[str] = field(default_factory=lambda: ["default"])
+    """EXPERIMENTAL!
     Preprocessing pipelines to add to the configurations we want to run.
 
     Each options multiplies the number of configurations to run by the number of
@@ -195,7 +205,7 @@ class BenchmarkSetup:
 
     Options:
         - "default": Use the default preprocessing pipeline.
-        - Any other string registered in `tabarena.benchmark.preprocessing.preprocessing_register`.
+        - Any other string points to custom experimental code for now.
     """
     custom_model_constraints: dict[str, dict[str, int]] | None = None
     """Custom mapping of model names to constraints to filter which models runs on
@@ -235,6 +245,10 @@ class BenchmarkSetup:
     By default, we use AutoGluon's automatic preprocessing for all models.
     This can be disabled by setting this to False. Warning: the model then needs
     to be able to handle this!
+    """
+    shuffle_features_per_split: bool = False # TODO: make True by default in the future
+    """If True, we shuffle the features per split before fitting the model.
+        -> Used for TabArena-v0.2.X
     """
 
     # Misc Settings
@@ -370,19 +384,30 @@ class BenchmarkSetup:
 
         partition = self.slurm_gpu_partition if is_gpu_job else self.slurm_cpu_partition
         partition = "--partition=" + partition
+        slurm_logs = f"--output={self.slurm_log_output}/%A/slurm-%A_%a.out"
+        script = str(Path(__file__).parent / self.slurm_script)
+        time_in_h = (
+            self.time_limit // 3600 * self.configs_per_job + self.time_limit_overhead
+        )
+        time_in_h = f"--time={time_in_h}:00:00"
 
+        # Handle GPU (same for exclusive and non-exclusive)
         gres = f"gpu:{self.num_gpus}" if is_gpu_job else ""
         if self.slurm_extra_gres:
             if len(gres) > 0:
                 gres += ","
             gres += self.slurm_extra_gres
         gres = f"--gres={gres}" if len(gres) > 0 else None
+        cmd_arg = f"{partition}"
+        if gres is not None:
+            cmd_arg += f" {gres}"
 
-        time_in_h = (
-            self.time_limit // 3600 * self.configs_per_job + self.time_limit_overhead
-        )
-        time_in_h = f"--time={time_in_h}:00:00"
+        if self.slurm_exclusive_node:
+            return f"{cmd_arg} {time_in_h} --mem=0 --nodes=1 --exclusive {slurm_logs} {script}"
+
+        # Handle CPU
         cpus = f"--cpus-per-task={self.num_cpus}"
+        # Handle Memory
         if self.slurm_mem_per_handle:
             if is_gpu_job:
                 mem = f"--mem-per-gpu={self.memory_limit // self.num_gpus}G"
@@ -390,13 +415,7 @@ class BenchmarkSetup:
                 mem = f"--mem-per-cpu={self.memory_limit // self.num_cpus}G"
         else:
             mem = f"--mem={self.memory_limit}G"
-        script = str(Path(__file__).parent / self.slurm_script)
 
-        slurm_logs = f"--output={self.slurm_log_output}/%A/slurm-%A_%a.out"
-
-        cmd_arg = f"{partition}"
-        if gres is not None:
-            cmd_arg += f" {gres}"
         return f"{cmd_arg} {time_in_h} {cpus} {mem} {slurm_logs} {script}"
 
     def get_jobs_to_run(self):  # noqa: C901
@@ -544,15 +563,17 @@ class BenchmarkSetup:
             )
         if not self.model_agnostic_preprocessing:
             method_kwargs["fit_kwargs"] = {"feature_generator": None}
+        if self.shuffle_features_per_split:
+            method_kwargs["shuffle_features"] = self.shuffle_features_per_split
 
         print(
             "Generating experiments for models...",
             f"\n\t`all` := number of configs: {self.n_random_configs}",
             f"\n\t{len(self.models)} models: {self.models}",
-            f"\n\t{len(self.preprocessing_pieplines)} preprocessing pipelines: {self.preprocessing_pieplines}",
+            f"\n\t{len(self.preprocessing_pipelines)} preprocessing pipelines: {self.preprocessing_pipelines}",
             f"\n\tMethod kwargs: {method_kwargs}",
         )
-        for preprocessing_name in self.preprocessing_pieplines:
+        for preprocessing_name in self.preprocessing_pipelines:
             pipeline_method_kwargs = deepcopy(method_kwargs)
 
             name_id_suffix = ""
@@ -602,6 +623,7 @@ class BenchmarkSetup:
                         name_id_suffix=name_id_suffix,
                         method_kwargs=pipeline_method_kwargs,
                         time_limit=self.time_limit,
+                        time_limit_with_preprocessing=self.time_limit_with_preprocessing,
                     )
                 )
 
@@ -646,7 +668,7 @@ class BenchmarkSetup:
         }
         return {"defaults": default_args, "jobs": jobs}
 
-    def setup_jobs(self) -> str:
+    def setup_jobs(self, array_job_limit: int = 100) -> str:
         """Setup the jobs to run by generating the SLURM job JSON file."""
         jobs_dict = self.get_jobs_dict()
         n_jobs = len(jobs_dict["jobs"])
@@ -659,7 +681,7 @@ class BenchmarkSetup:
         with open(self.slurm_job_json, "w") as f:
             json.dump(jobs_dict, f)
 
-        run_command = f"sbatch --array=0-{n_jobs - 1}%100 {self.slurm_base_command} {self.slurm_job_json}"
+        run_command = f"sbatch --array=0-{n_jobs - 1}%{array_job_limit} {self.slurm_base_command} {self.slurm_job_json}"
         print(
             f"##### Setup Jobs for {self._safe_benchmark_name}"
             "\nRun the following command to start the jobs:"
