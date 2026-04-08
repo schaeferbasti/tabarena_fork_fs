@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import gc
+import inspect
 import shutil
 from typing import Type
 
@@ -49,7 +50,7 @@ class AGWrapper(AbstractExecModel):
         fit_kwargs = copy.deepcopy(self.fit_kwargs)
 
         # TODO: think about if we can reset the index here without breaking simulation artifacts
-        train_data = X
+        train_data = X.copy()
 
         num_folds = fit_kwargs.pop("num_bag_folds", None)
         num_repeats = fit_kwargs.pop("num_bag_folds", None)
@@ -72,6 +73,20 @@ class AGWrapper(AbstractExecModel):
             if "ag_args_ensemble" not in fit_kwargs:
                 fit_kwargs["ag_args_ensemble"] = {}
             fit_kwargs["ag_args_ensemble"]["custom_splits"] = custom_splits
+
+        feature_generator_cls = fit_kwargs.pop("feature_generator_cls", None)
+        if feature_generator_cls is not None:
+            feature_generator_kwargs = fit_kwargs.pop("feature_generator_kwargs", {})
+            sig = inspect.signature(feature_generator_cls.__init__)
+            group_params = {
+                "group_cols": self.group_on,
+                "group_labels": self.group_labels,
+                "group_time_on": self.group_time_on,
+            }
+            for param, value in group_params.items():
+                if param in sig.parameters:
+                    feature_generator_kwargs[param] = value
+            fit_kwargs["feature_generator"] = feature_generator_cls(**feature_generator_kwargs)
 
         train_data[self.label] = y
         if X_val is not None:
@@ -99,6 +114,7 @@ class AGWrapper(AbstractExecModel):
             X_val=X_val,
             y_val=y_val,
         )
+        del X, y, X_val, y_val # encourage memory release
 
         self.predictor = TabularPredictor(
             label=self.label,

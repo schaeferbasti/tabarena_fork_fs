@@ -310,7 +310,7 @@ class TabArenaTaskMetadataMixin:
         # Resolve instance groups
         if self.group_on is not None:
             num_instance_groups = self.get_num_instance_groups(
-                X=oml_dataset, group_on=self.group_on
+                X=oml_dataset, group_on=self.group_on, group_labels=self.group_labels,
             )
 
         return (
@@ -498,7 +498,7 @@ class UserTask:
         if self._task_cache_path is not None:
             return self._task_cache_path
         return (
-            (openml.config._resolve_default_cache_dir() / "tabarena_tasks")
+            (openml.config._root_cache_directory / "tabarena_tasks")
             .expanduser()
             .resolve()
         )
@@ -563,6 +563,8 @@ class UserTask:
         time_on: str | None = None,
         group_time_on: str | None = None,
         group_labels: GroupLabelTypes | None = None,
+        split_time_horizon: SplitTimeHorizonTypes | None = None,
+        split_time_horizon_unit: SplitTimeHorizonUnitTypes | None = None,
         dataset_name: str | None = None,
     ) -> OpenMLSupervisedTask:
         """Convert the user-defined task to a local (unpublished) OpenMLSupervisedTask.
@@ -622,6 +624,10 @@ class UserTask:
         group_time_on:
             The name of the column that contains the time information for
             each group in case of grouped data.
+        split_time_horizon:
+            The time horizon used for temporal splitting. This can be a number (e.g., 5).
+        split_time_horizon_unit:
+            The unit of the time horizon used for temporal splitting. This can be a string (e.g., 'days').
         dataset_name:
             Name of the dataset. Must match OpenML allowed names.
             If None, a default name based on the task name is used.
@@ -670,6 +676,8 @@ class UserTask:
             time_on=time_on,
             group_time_on=group_time_on,
             group_labels=group_labels,
+            split_time_horizon=split_time_horizon,
+            split_time_horizon_unit=split_time_horizon_unit,
             task_id=self.task_id,
             task_type_id=task_type,
             task_type="None",  # Placeholder, not used for local tasks
@@ -812,6 +820,24 @@ def openml_create_datasets_without_arff_dump(
     # We need to reset the index such that it is part of the data.
     if data.index.name is not None:
         data = data.reset_index()
+
+    # liac-arff only supports integer, floating, string, categorical, and boolean dtypes.
+    # Types like datetime64, timedelta64, period, and interval are unsupported and will
+    # raise a ValueError in attributes_arff_from_df.
+    # We cast such columns to string here solely so that attributes_arff_from_df can
+    # infer ARFF attribute metadata. This does NOT affect the actual stored data — the
+    # dataset is persisted as parquet (see caller) and loaded from there, never from ARFF.
+    unsupported_cols = data.select_dtypes(include=["datetime64", "timedelta64"]).columns
+    # select_dtypes doesn't support "period" or "interval" as strings, so detect manually
+    unsupported_cols = unsupported_cols.append(
+        pd.Index(
+            col for col in data.columns
+            if isinstance(data[col].dtype, (pd.PeriodDtype, pd.IntervalDtype))
+        )
+    )
+    if len(unsupported_cols) > 0:
+        data = data.copy()
+        data[unsupported_cols] = data[unsupported_cols].astype(str)
 
     # infer the type of data for each column of the DataFrame
     attributes_ = attributes_arff_from_df(data)

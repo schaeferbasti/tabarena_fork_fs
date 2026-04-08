@@ -123,6 +123,7 @@ class TabArenaContext:
         remove_imputed: bool = False,
         tmp_treat_tasks_independently: bool = False,
         leaderboard_kwargs: dict | None = None,
+        figure_file_type: str = "pdf",
         **kwargs,
     ) -> pd.DataFrame:
         from tabarena.nips2025_utils.compare import compare_on_tabarena
@@ -139,8 +140,41 @@ class TabArenaContext:
             remove_imputed=remove_imputed,
             tmp_treat_tasks_independently=tmp_treat_tasks_independently,
             leaderboard_kwargs=leaderboard_kwargs,
+            figure_file_type=figure_file_type,
             **kwargs,
         )
+
+    def compare_per_dataset(
+        self,
+        output_dir: str | Path,
+        new_results: pd.DataFrame | None = None,
+        ta_results: pd.DataFrame | None = None,
+        **kwargs,
+    ) -> dict[str, pd.DataFrame]:
+        output_dir = Path(output_dir)
+        if ta_results is None:
+            ta_results = self.load_results_paper(
+                download_results="auto",
+            )
+        datasets = sorted(list(ta_results["dataset"].unique()))
+        if new_results is not None:
+            new_datasets = sorted(list(new_results["dataset"].unique()))
+            datasets = sorted(datasets + [d for d in new_datasets if d not in datasets])
+
+        outs = {}
+        plot_tuning_kwargs = kwargs.pop("plot_tuning_kwargs", {})
+        for dataset in datasets:
+            plot_tuning_kwargs_dataset = copy.deepcopy(plot_tuning_kwargs)
+            plot_tuning_kwargs_dataset["title"] = f"Dataset: {dataset}"
+            outs[dataset] = self.compare(
+                output_dir=output_dir / "per_dataset" / dataset,
+                ta_results=ta_results,
+                new_results=new_results,
+                datasets=[dataset],
+                plot_tuning_kwargs=plot_tuning_kwargs_dataset,
+                **kwargs,
+            )
+        return outs
 
     @property
     def methods(self) -> list[str]:
@@ -676,6 +710,18 @@ class TabArenaContext:
             use_latex=use_latex,
             use_website_folder_names=use_website_folder_names,
             evaluator_kwargs=evaluator_kwargs,
+        )
+
+    def plot_tuning_trajectories_per_dataset(
+        self,
+        save_path: str | Path,
+        **kwargs,
+    ):
+        from tabarena.plot.tuning_trajectories.plot_pareto_over_tuning_time import plot_tuning_trajectories_per_dataset
+        plot_tuning_trajectories_per_dataset(
+            tabarena_context=self,
+            fig_save_dir=save_path,
+            **kwargs,
         )
 
     def plot_runtime_per_method(self, save_path: str | Path, df_results_configs: pd.DataFrame = None):

@@ -144,6 +144,11 @@ class SlurmSetup:
     configs_per_job: int = 5
     """Batching of several experiments per job to reduce the number of  SLURM jobs."""
 
+    max_array_size: int = 29_999
+    """Maximum number of array tasks per SLURM array job.
+    If the total number of jobs exceeds this limit, the jobs are split
+    into multiple array jobs, each with its own JSON file and sbatch command."""
+
     setup_ray_for_slurm_shared_resources_environment: bool = True
     """Prepare Ray for a SLURM shared resource environment.
     Recommended to set to True if sequential_local_fold_fitting is False."""
@@ -156,7 +161,7 @@ class BenchmarkSetup2026:
     benchmark_name: str
     """Unique name of the benchmark; determines where output artifacts are stored."""
 
-    task_metadata: pd.DataFrame | list[TabArenaTaskMetadata] | str | Path
+    task_metadata: Literal["tabarena-v0.1"] | pd.DataFrame | list[TabArenaTaskMetadata] | str | Path
     """Metadat that defines the tasks to benchmark.
 
     If str, we assume it is the path to a CSV file, which we load as DataFrame.
@@ -297,6 +302,9 @@ class BenchmarkSetup2026:
     dynamic_tabarena_validation_protocol: bool = True
     """If True, the validation data will be adapted dynamically based on the task.
     WARNING: this can overwrite the configured validation of a configuration!"""
+    shuffle_features: bool = True
+    """Whether to shuffle the features of the datasets. Only here for backward compatibility 
+    with the original TabArena setup, but not recommended to change."""
     parallel_benchmark_name: str | None = None
     """Set this is to some string value to make sure you can run parallel
     jobs for the same benchmark name.This ensures that the config and job .yaml/.json
@@ -432,6 +440,8 @@ class BenchmarkSetup2026:
                 mem = f"--mem-per-cpu={memory_limit // num_cpus}G"
         else:
             mem = f"--mem={memory_limit}G"
+        if memory_limit is None:
+            mem = mem[:-1]
 
         return f"{cmd_arg} {time_in_h} {cpus} {mem} {slurm_logs} {slurm_script_path}"
 
@@ -463,6 +473,76 @@ class BenchmarkSetup2026:
         """Function to parse and filter the task metadata for jobs we want to run."""
         # Parse task metadata
         task_metadata = self.task_metadata
+
+        if isinstance(task_metadata, str) and (task_metadata == "tabarena-v0.1"):
+            print("Loading task metadata from TabArena v0.1 and converting to new TabArenaTaskMetadata fromat...")
+            from tabarena.nips2025_utils.fetch_metadata import (
+                load_curated_task_metadata,
+            )
+
+            metadata = load_curated_task_metadata()
+            task_metadata = []
+            for row in metadata.itertuples():
+                num_classes = row.num_classes
+                num_instances = row.num_instances
+                num_features = row.num_features
+
+                n_repeats = row.tabarena_num_repeats
+                n_folds = row.num_folds
+
+                metric_map = {
+                    "binary": "roc_auc",
+                    "multiclass": "log_loss",
+                    "regression": "rmse",
+                }
+                eval_metric = metric_map[row.problem_type]
+
+                for repeat_i in range(n_repeats):
+                    for fold_i in range(n_folds):
+
+                        split_index = SplitMetadata.get_split_index(repeat_i=repeat_i, fold_i=fold_i)
+                        splits_metadata = {
+                            split_index:
+                            SplitMetadata(
+                                repeat=repeat_i,
+                                fold=fold_i,
+                                num_instances_train=num_instances * 2/3,
+                                num_instances_test=num_instances * 1/3,
+                                num_instance_groups_train=num_instances * 2/3,
+                                num_instance_groups_test=num_instances * 1/3,
+                                num_classes_train=num_classes,
+                                num_classes_test=num_classes,
+                                num_features_train=num_features,
+                                num_features_test=num_features,
+                            )
+                        }
+
+                        task_metadata.append(
+                            TabArenaTaskMetadata(
+                                task_id_str=row.task_id,
+                                dataset_name=row.dataset_name,
+                                tabarena_task_name=row.dataset_name,
+                                problem_type=row.problem_type,
+                                is_classification=row.is_classification,
+                                target_name=row.target_feature,
+                                stratify_on=row.target_feature if row.is_classification else None,
+                                split_time_horizon=None,
+                                split_time_horizon_unit=None,
+                                time_on=None,
+                                group_on=None,
+                                group_time_on=None,
+                                group_labels=None,
+                                multiclass_max_n_classes_over_splits=num_classes,
+                                multiclass_min_n_classes_over_splits=num_classes,
+                                class_consistency_over_splits=True,
+                                num_instances=num_instances,
+                                num_features=num_features,
+                                num_instance_groups=num_instances,
+                                num_classes=num_classes,
+                                splits_metadata=splits_metadata,
+                                eval_metric=eval_metric,
+                            )
+                        )
         if isinstance(task_metadata, (str, Path)):
             print(f"Loading task metadata from {task_metadata}...")
             task_metadata = pd.read_csv(task_metadata, index_col=False)
@@ -557,6 +637,7 @@ class BenchmarkSetup2026:
             func_kwargs={
                 "output_dir": self.path_setup.get_output_path(self.benchmark_name),
                 "models_to_constraints": self.models_to_constraints,
+                "ignore_cache": self.ignore_cache,
             },
             track_progress=True,
             tqdm_kwargs={"desc": "Checking Cache and Filter Invalid Jobs"},
@@ -662,7 +743,7 @@ class BenchmarkSetup2026:
         experiments_lst = []
         method_kwargs = {
             "init_kwargs": {"verbosity": self.verbosity},
-            "shuffle_features": True,
+            "shuffle_features": self.shuffle_features,
         }
         if self.model_artifacts_base_path is not None:
             method_kwargs["init_kwargs"]["default_base_path"] = (
@@ -763,32 +844,70 @@ class BenchmarkSetup2026:
         }
         return {"defaults": default_args, "jobs": jobs}
 
-    def setup_jobs(self, array_job_limit: int = 100) -> str:
-        """Setup the jobs to run by generating the SLURM job JSON file."""
+    def setup_jobs(self, array_job_limit: int = 100) -> str | list[str]:
+        """Setup the jobs to run by generating the SLURM job JSON file(s).
+
+        If the number of jobs exceeds `slurm_setup.max_array_size`, the jobs
+        are split into multiple array jobs, each with its own JSON file.
+
+        Returns a single command string if one batch, or a list of command
+        strings if multiple batches are needed.
+        """
         jobs_dict = self.get_jobs_dict()
-        slurm_job_json_path = self.path_setup.get_slurm_job_json_path(
+        base_json_path = self.path_setup.get_slurm_job_json_path(
             self._parallel_safe_benchmark_name
         )
-        n_jobs = len(jobs_dict["jobs"])
+        all_jobs = jobs_dict["jobs"]
+        n_jobs = len(all_jobs)
         if n_jobs == 0:
             print("No jobs to run.")
-            Path(slurm_job_json_path).unlink(missing_ok=True)
+            Path(base_json_path).unlink(missing_ok=True)
             Path(
                 self.path_setup.get_configs_path(self._parallel_safe_benchmark_name)
             ).unlink(missing_ok=True)
             return "N/A"
 
-        with open(slurm_job_json_path, "w") as f:
-            json.dump(jobs_dict, f)
+        max_array_size = self.slurm_setup.max_array_size
+        job_batches = list(to_batch_list(all_jobs, max_array_size))
 
-        run_command = f"sbatch --array=0-{n_jobs - 1}%{array_job_limit} {self.slurm_base_command} {slurm_job_json_path}"
+        run_commands = []
+        for batch_idx, batch_jobs in enumerate(job_batches):
+            batch_jobs = list(batch_jobs)
+            # Use original path for single batch, append _batch{i} for multiple
+            if len(job_batches) == 1:
+                json_path = base_json_path
+            else:
+                json_path = base_json_path.replace(
+                    ".json", f"_batch{batch_idx}.json"
+                )
+
+            batch_dict = {"defaults": jobs_dict["defaults"], "jobs": batch_jobs}
+            with open(json_path, "w") as f:
+                json.dump(batch_dict, f)
+
+            batch_size = len(batch_jobs)
+            run_command = (
+                f"sbatch --array=0-{batch_size - 1}%{array_job_limit}"
+                f" {self.slurm_base_command} {json_path}"
+            )
+            run_commands.append(run_command)
+
+        batch_info = ""
+        if len(job_batches) > 1:
+            batch_info = (
+                f"\nSplit into {len(job_batches)} array job batches"
+                f" (max {max_array_size} per batch)."
+            )
         print(
             f"##### Setup Jobs for {self._parallel_safe_benchmark_name}"
-            "\nRun the following command to start the jobs:"
-            f"\n{run_command}"
-            "\n"
+            f"{batch_info}"
+            "\nRun the following command(s) to start the jobs:"
+            f"\n" + "\n".join(run_commands) + "\n"
         )
-        return run_command
+
+        if len(run_commands) == 1:
+            return run_commands[0]
+        return run_commands
 
     @property
     def models_to_constraints(self) -> dict[str, dict[str, int]]:
@@ -911,6 +1030,7 @@ def should_run_job(
     input_data: dict,
     output_dir: str,
     models_to_constraints: dict,
+    ignore_cache: bool,
 ) -> bool:
     """Check if a job should be run based on the configuration and cache.
     Must be not a class function to be used with Ray.
@@ -941,6 +1061,9 @@ def should_run_job(
         models_to_constraints=models_to_constraints,
     ):
         return False
+
+    if ignore_cache:
+        return True
 
     return not check_cache_hit(
         result_dir=output_dir,
