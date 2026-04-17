@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from experimental.feature_selection_benchmark.data_integration.fs_data_constants import (
     BENCHMARK_TASK_COLLECTION_NAME,
-    DATA_FOUNDRY_CACHE,
+    OPENML_CACHE,
 )
 from tabflow_slurm.benchmarking_setup.data_foundry_integration.data_foundry_task_creator import (
     get_metadata_for_benchmark_suite,
@@ -17,7 +17,7 @@ from tabflow_slurm.benchmarking_setup.data_foundry_integration.data_foundry_task
 from tabflow_slurm.setup_slurm_base_v2 import BenchmarkSetup2026, PathSetup, SlurmSetup
 
 ALL_TASK_METADATA = get_metadata_for_benchmark_suite(
-    BENCHMARK_TASK_COLLECTION_NAME, data_foundry_cache=DATA_FOUNDRY_CACHE
+    BENCHMARK_TASK_COLLECTION_NAME, openml_cache=OPENML_CACHE
 )
 FS_TIME_LIMIT = 3600
 
