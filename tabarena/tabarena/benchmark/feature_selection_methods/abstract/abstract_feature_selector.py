@@ -73,6 +73,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     _rng: np.random.Generator
     """Random number generator for fallback feature selection."""
 
+    _outer_random_state: int | None
+    """PLACEHOLDER"""
+
     problem_type: str | None
     """The problem type of the current dataset"""
 
@@ -109,6 +112,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
 
         self._selected_features = None
         self._feature_scores = None
+        self._outer_random_state = None
 
     def _fit_transform(
         self,
@@ -121,6 +125,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         **kwargs,  # noqa: ARG002
     ) -> tuple[pd.DataFrame, dict[str, list[str]]]:
         """Fit and transform for feature selection methods."""
+        if self._outer_random_state:
+            self.random_state = self._outer_random_state
+
         self._original_features = list(X.columns)
         old_type_family_groups_special = {}
         if self.feature_metadata_in.type_group_map_special is not None:

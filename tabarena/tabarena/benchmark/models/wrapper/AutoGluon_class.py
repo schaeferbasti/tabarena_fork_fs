@@ -110,7 +110,7 @@ class AGWrapper(AbstractExecModel):
                 fg_kwargs = fit_kwargs.get("_feature_generator_kwargs", {})
                 for generator in fg_kwargs.get("post_generators", []):
                     if isinstance(generator, AbstractFeatureSelector):
-                        generator.random_state = self._split_seed
+                        generator._outer_random_state = self._split_seed
         return train_data, init_kwargs, fit_kwargs
 
 
