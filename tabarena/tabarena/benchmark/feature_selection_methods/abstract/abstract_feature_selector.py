@@ -384,3 +384,76 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             )
             return True
         return False
+    
+    def _impute(
+        self, 
+        X: pd.DataFrame, 
+        numeric_strategy: str = "mean",
+        categorical_strategy: str = "most_frequent",
+    ) -> pd.DataFrame:
+        """Impute missing values separately for numeric and categorical features.
+        
+        Parameters
+        ----------
+        X: pd.DataFrame
+            Input data with potential missing values.
+        numeric_strategy: str
+            Strategy for numeric columns (mean, median, most_frequent, constant).
+        categorical_strategy: str
+            Strategy for categorical columns (most_frequent, constant).
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with missing values imputed.
+        """
+        from sklearn.impute import SimpleImputer
+        
+        X_imputed = X.copy()
+        num_cols = X.select_dtypes(include="number").columns
+        cat_cols = X.select_dtypes(include=["object", "category"]).columns
+        
+        if len(num_cols):
+            X_imputed[num_cols] = SimpleImputer(strategy=numeric_strategy).fit_transform(X[num_cols])
+        if len(cat_cols):
+            X_imputed[cat_cols] = SimpleImputer(strategy=categorical_strategy).fit_transform(X[cat_cols])
+        
+        return X_imputed
+
+    def _discretize(self, X, max_bins=None):
+        return X    
+    
+    def _ordinal_encode(
+        self, 
+        X: pd.DataFrame, 
+        handle_unknown: str = "use_encoded_value",
+        unknown_value: int = -1,
+    ) -> pd.DataFrame:
+        from sklearn.preprocessing import OrdinalEncoder
+
+        X_enc = X.copy()
+        cat_cols = X.select_dtypes(include=["object", "category"]).columns
+        if len(cat_cols):
+            X_enc[cat_cols] = OrdinalEncoder(
+                handle_unknown=handle_unknown, unknown_value=unknown_value
+            ).fit_transform(X[cat_cols])
+        return X_enc
+
+    def _preprocess(
+            self, 
+            X, 
+            impute=False, 
+            discretize=False, 
+            ordinal_encode=False,
+            impute_kwargs: dict | None = None,
+            discretize_kwargs: dict | None = None,
+            ordinal_encode_kwargs: dict | None = None,
+        ):
+        """Convenience method bundling common preprocessing."""
+        if impute:
+            X = self._impute(X, **(impute_kwargs or {}))
+        if discretize:
+            X = self._discretize(X, **(discretize_kwargs or {}))
+        if ordinal_encode:
+            X = self._ordinal_encode(X, **(ordinal_encode_kwargs or {}))
+        return X
