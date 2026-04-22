@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import tempfile
 import time
+import pandas as pd
+
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -160,7 +162,16 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             self._selected_features = self.selected_features_from_feature_scores()
         else:
             self._selected_features = self._fit_feature_selection(**feature_fit_kwargs)
-        assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+            assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+            if len(self._selected_features) < self.max_features:
+                self._log(30,
+                    f"Warning: Not enough features selected to reach {self.max_features}. "
+                    f"Selected {len(self._selected_features)} features from the method, "
+                    f"and randomly selected the rest."
+                )
+                self._selected_features += self.fallback_feature_selection(
+                    selected_features=self._selected_features
+                )
         # Transform (aka select features)
         X_out = self._transform(X=X)
         assert list(X_out) == self._selected_features, "The output features must be the same as the selected features."
@@ -420,10 +431,24 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         
         return X_imputed
 
-    def _discretize(self, X, max_bins=None):
-        return X    
+    def _discretize(self, X: pd.DataFrame) -> pd.DataFrame:
+        from sklearn.preprocessing import KBinsDiscretizer
+
+        X_disc = X.copy()
+        num_cols = X.select_dtypes(include="number").columns
+        max_bins = int(np.log2(len(X))) + 1  # sturges' rule to scale with size
+        
+        for col in num_cols:
+            n_bins = min(X[col].nunique(), max_bins)
+            if n_bins < 2:
+                continue  # constant feature, skip
+            X_disc[col] = KBinsDiscretizer(
+                n_bins=n_bins, encode="ordinal", strategy="quantile",
+                quantile_method="averaged_inverted_cdf"
+            ).fit_transform(X[[col]])
+        return X_disc 
     
-    def _ordinal_encode(
+    def _encode_ordinal(
         self, 
         X: pd.DataFrame, 
         handle_unknown: str = "use_encoded_value",
@@ -439,21 +464,77 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             ).fit_transform(X[cat_cols])
         return X_enc
 
+    def _encode_target(self, y: pd.Series) -> pd.Series:
+        from sklearn.preprocessing import LabelEncoder
+        return pd.Series(LabelEncoder().fit_transform(y), index=y.index)
+
     def _preprocess(
             self, 
-            X, 
-            impute=False, 
-            discretize=False, 
-            ordinal_encode=False,
+            X: pd.DataFrame,
+            *,
+            y: pd.Series | None = None,
+            impute: bool = False,
+            discretize: bool = False,
+            encode_ordinal: bool = False,
+            encode_target: bool = False,
             impute_kwargs: dict | None = None,
             discretize_kwargs: dict | None = None,
-            ordinal_encode_kwargs: dict | None = None,
-        ):
+            encode_ordinal_kwargs: dict | None = None,
+        ) -> tuple[pd.DataFrame, pd.Series | None]:
         """Convenience method bundling common preprocessing."""
         if impute:
             X = self._impute(X, **(impute_kwargs or {}))
         if discretize:
             X = self._discretize(X, **(discretize_kwargs or {}))
-        if ordinal_encode:
-            X = self._ordinal_encode(X, **(ordinal_encode_kwargs or {}))
-        return X
+        if encode_ordinal:
+            X = self._encode_ordinal(X, **(encode_ordinal_kwargs or {}))
+        if encode_target:
+            if y is None:
+                raise ValueError("encode_target=True requires y to be provided.")
+            y = self._encode_target(y)
+        return X, y
+    
+
+class AbstractITFeatureSelector(AbstractFeatureSelector):
+    """Base class for information-theory-based feature selectors.
+    
+    Provides shared entropy, mutual information, and symmetrical uncertainty
+    helpers used by MI, IG, JMI, CMIM, DISR, and CFS.
+    """
+
+    @staticmethod
+    def _entropy(*xs: pd.Series, base: float = 2) -> float:
+        """H(X1, X2, ..., Xk) — joint discrete entropy."""
+        if len(xs) == 1:
+            probs = xs[0].value_counts(normalize=True, dropna=False).values
+        else:
+            joint = pd.concat(xs, axis=1)
+            probs = joint.value_counts(normalize=True, dropna=False).values
+        if len(probs) <= 1:
+            return 0.0
+        return -np.sum(probs * np.log(probs)) / np.log(base)
+
+    @classmethod
+    def _mutual_information(cls, x: pd.Series, y: pd.Series, base: float = 2) -> float:
+        """I(X; Y) = H(X) + H(Y) - H(X, Y)."""
+        return cls._entropy(x, base=base) + cls._entropy(y, base=base) - cls._entropy(x, y, base=base)
+
+    @classmethod
+    def _conditional_mutual_information(cls, x, y, z, base: float = 2) -> float:
+        """I(X; Y | Z) = H(X, Z) + H(Y, Z) - H(X, Y, Z) - H(Z)."""
+        return (
+            cls._entropy(x, z, base=base)
+            + cls._entropy(y, z, base=base)
+            - cls._entropy(x, y, z, base=base)
+            - cls._entropy(z, base=base)
+        )
+
+    @classmethod
+    def _symmetrical_uncertainty(cls, x, y, base: float = 2) -> float:
+        """SU(X, Y) = 2 * I(X; Y) / (H(X) + H(Y))."""
+        hx = cls._entropy(x, base=base)
+        hy = cls._entropy(y, base=base)
+        if hx + hy == 0:
+            return 0.0
+        ixy = hx + hy - cls._entropy(x, y, base=base)
+        return 2.0 * ixy / (hx + hy)
