@@ -19,6 +19,7 @@ NAME_TO_MODULE_MAP = {
     "ConsistencyFeatureSelector": "consistency.consistency",
     "DISRFeatureSelector": "disr.disr",
     "ElasticNetFeatureSelector": "elastic_net.elastic_net",
+    "FisherScoreFeatureSelector": "fisher_score.fisher_score",
     "GainRatioFeatureSelector": "gain_ratio.gain_ratio",
     "GiniFeatureSelector": "gini.gini",
     "ImpurityFeatureSelector": "impurity.impurity",
