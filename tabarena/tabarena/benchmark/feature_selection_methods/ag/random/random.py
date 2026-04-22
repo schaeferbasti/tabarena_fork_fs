@@ -7,7 +7,6 @@ from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_sele
 
 logger = logging.getLogger(__name__)
 
-# TODO: ensure that we get a different random state each time we call this code within TabArena
 class RandomFeatureSelector(AbstractFeatureSelector):
     """Random Feature Selection."""
 
