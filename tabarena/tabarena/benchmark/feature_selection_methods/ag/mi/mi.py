@@ -11,8 +11,7 @@ if TYPE_CHECKING:
 
 
 class MIFeatureSelector(AbstractFeatureSelector):
-    """
-    MI Feature Selection.
+    """MI Feature Selection.
 
     Reference: Battiti, Roberto. "Using mutual information for selecting features in supervised neural net learning."
     IEEE Transactions on neural networks 5.4 (1994): 537-550.
@@ -24,17 +23,16 @@ class MIFeatureSelector(AbstractFeatureSelector):
     feature_scoring_method: bool = True
 
     def _fit_feature_scoring(
-            self, 
-            *, 
-            X: pd.DataFrame, 
-            y: pd.Series, 
-            time_limit: int | None = None # noqa: ARG002
+        self, 
+        *, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        time_limit: int | None = None # noqa: ARG002
     ) -> dict[str, float]:
-        # Treats int columns as continuous — assumes upstream preprocessing has already
-        # converted truly categorical ints (zip codes, etc.) to category dtype.
+        # categorical columns treated as discrete (ordinal encoding), binary prob represented as ints and processed as continuous (incorrectly) 
         cat_cols = X.select_dtypes(include=["object", "category", "bool"]).columns
-        discrete_mask = X.columns.isin(cat_cols).values
-        X_pre = self._preprocess(X, impute=True, ordinal_encode=True)
+        discrete_mask = X.columns.isin(cat_cols)
+        X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
 
         mi_func = mutual_info_regression if self.problem_type == "regression" else mutual_info_classif
         scores = mi_func(

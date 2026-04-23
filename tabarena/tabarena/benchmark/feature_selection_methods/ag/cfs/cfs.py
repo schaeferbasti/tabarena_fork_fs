@@ -1,23 +1,18 @@
 """Correlation-based Feature Selection (CFS)."""
 from __future__ import annotations
 
-import logging
 import time
 import numpy as np
 
-from math import log
 from typing import TYPE_CHECKING
-from sklearn.preprocessing import KBinsDiscretizer
 
-from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
+from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractITFeatureSelector
 
 if TYPE_CHECKING:
     import pandas as pd
 
-logger = logging.getLogger(__name__)
 
-
-class CFSFeatureSelector(AbstractFeatureSelector):
+class CFSFeatureSelector(AbstractITFeatureSelector):
     """Correlation-based Forward Selection (CFS).
 
     Reference: Hall, Mark A. Correlation-based feature selection for machine learning. Diss. The University of Waikato, 1999.
@@ -29,49 +24,46 @@ class CFSFeatureSelector(AbstractFeatureSelector):
     The variation implemented here is a forward selection method using Symmetrical Uncertainty.
     Changes to the implementation by Bastian Schäfer:
                            - Add time constraint
-                           - Add max_features (number of features to be maximally selected by the method) constraint
-                           - Break loop when max_features is reached
+                           - Replaced merit-based early stopping with max_features constraint
+                           - Pad with random fallback if timeout cuts loop short
                            - Use pandas instead of numpy and avoid conversion
     """
 
     name = "CFSFeatureSelector"
     feature_scoring_method: bool = False
 
-
     def _fit_feature_selection(
-        self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None
+        self, 
+        *, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        time_limit: int | None = None
     ) -> list[str]:
         start_time = time.monotonic()
         F = []  # cfs score
-        M = []  # merit values
 
-        X = self._discretize(X)
+        X_pre, _ = self._preprocess(X, impute=True, discretize=True, encode_ordinal=True)
 
-        while True:
+        while len(F) < self.max_features:
             merit = -np.inf
             idx = -1
-            for i, _col in enumerate(X.columns):
+            for i in range(len(X_pre.columns)):
                 if self._timed_out(time_limit, start_time):
                     break
                 if i not in F:
                     F.append(i)
                     # calculate the merit of current selected features
-                    t = self.merit_calculation(X.iloc[:, F], y)
+                    t = self.merit_calculation(X_pre.iloc[:, F], y)
                     if t > merit:
                         merit = t
                         idx = i
                     F.pop()
+            if idx == -1:
+                break
             F.append(idx)
-            M.append(merit)
-            if (
-                len(M) > 5
-                and M[-1] <= M[-2] <= M[-3] <= M[-4] <= M[-5]
-            ):
-                break
-            if len(F) >= self.max_features:
-                break
-        selected_features = [self._original_features[i] for i in np.array(F)]
-        selected_features = selected_features[: self.max_features]
+        selected_features = [self._original_features[i] for i in F]
+        if len(selected_features) < self.max_features:
+            selected_features += self.fallback_feature_selection(selected_features=selected_features)
         return [str(feat) for feat in selected_features]
 
     def merit_calculation(self, X, y):
@@ -86,89 +78,11 @@ class CFSFeatureSelector(AbstractFeatureSelector):
         """
         rff = 0
         rcf = 0
-        for i, _col in enumerate(X.columns):
+        for i in range(len(X.columns)):
             fi = X.iloc[:, i]
-            rcf += self.su_calculation(fi, y)  # su is the symmetrical uncertainty of fi and y
-            for j, _col in enumerate(X.columns):
-                if j > i:
-                    fj = X.iloc[:, j]
-                    rff += self.su_calculation(fi, fj)
+            rcf += self._symmetrical_uncertainty(fi, y)  # su is the symmetrical uncertainty of fi and y
+            for j in range(i + 1, len(X.columns)):
+                fj = X.iloc[:, j]
+                rff += self._symmetrical_uncertainty(fi, fj)
         rff *= 2
         return rcf / np.sqrt(len(X.columns) + rff)
-
-    def information_gain(self, f1, f2):
-        r"""This function calculates the information gain, where ig(f1, f2) = H(f1) - H(f1\f2).
-
-        :param f1: {numpy array}, shape (n_samples,)
-        :param f2: {numpy array}, shape (n_samples,)
-        :return: ig: {float}
-        """
-        return self.entropyd(f1) - self.conditional_entropy(f1, f2)
-
-    def conditional_entropy(self, f1, f2):
-        """This function calculates the conditional entropy, where ce = H(f1) - I(f1;f2)
-        :param f1: {numpy array}, shape (n_samples,)
-        :param f2: {numpy array}, shape (n_samples,)
-        :return: ce {float} conditional entropy of f1 and f2.
-        """
-        return self.entropyd(f1) - self.midd(f1, f2)
-
-    def su_calculation(self, f1, f2):
-        """This function calculates the symmetrical uncertainty, where su(f1,f2) = 2*IG(f1,f2)/(H(f1)+H(f2))
-        :param f1: {numpy array}, shape (n_samples,)
-        :param f2: {numpy array}, shape (n_samples,)
-        :return: su {float} su is the symmetrical uncertainty of f1 and f2.
-        """
-        # calculate information gain of f1 and f2, t1 = ig(f1, f2)
-        t1 = self.information_gain(f1, f2)
-        # calculate entropy of f1
-        t2 = self.entropyd(f1)
-        # calculate entropy of f2
-        t3 = self.entropyd(f2)
-        if (t2 + t3) == 0:
-            return 0.0
-        return 2.0 * t1 / (t2 + t3)
-
-
-    def entropyd(self, sx, base=2):
-        """Discrete entropy estimator given a list of samples which can be any hashable object."""
-        return self.entropyfromprobs(self.hist(sx), base=base)
-
-    @staticmethod
-    def hist(sx):
-        """Compute histogram (probability distribution) from a list of samples."""
-        d = dict()
-        for s in sx:
-            d[s] = d.get(s, 0) + 1
-        return (float(z) / len(sx) for z in d.values())
-
-    def entropyfromprobs(self, probs, base=2):
-        """Compute entropy from a probability distribution."""
-        return -sum(map(self.elog, probs)) / log(base)
-
-    @staticmethod
-    def elog(x):
-        """Compute x*log(x), returning 0 for x <= 0 or x >= 1."""
-        if x <= 0.0 or x >= 1.0:
-            return 0
-        return x * log(x)
-
-    def midd(self, x, y):
-        """Discrete mutual information estimator given a list of samples which can be any hashable object."""
-        return -self.entropyd(list(zip(x, y))) + self.entropyd(x) + self.entropyd(y)
-
-    def _discretize(self, X: pd.DataFrame) -> pd.DataFrame:
-        """Discretize continuous attributes with unsupervised method (original paper refers to Fayyad & Irani MDL)"""
-        X_disc = X.copy()
-        num_cols = X.select_dtypes(include="number").columns
-        max_bins = int(np.log2(len(X))) + 1  # sturges' rule to scale with size
-        
-        for col in num_cols:
-            n_bins = min(X[col].nunique(), max_bins)
-            if n_bins < 2:
-                continue  # constant feature, skip
-            X_disc[col] = KBinsDiscretizer(
-                n_bins=n_bins, encode="ordinal", strategy="quantile",
-                quantile_method="averaged_inverted_cdf"
-            ).fit_transform(X[[col]])
-        return X_disc
