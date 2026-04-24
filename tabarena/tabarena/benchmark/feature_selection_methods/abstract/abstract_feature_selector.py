@@ -67,10 +67,15 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     _feature_scores: dict[str, float] | None
     """Mapping from feature name to score (higher is more important).
     None if the feature selector is not fitted yet, or if the method does not compute feature scores.
-
     Note: this mapping may be incomplete, depending on the method and
     if the method finished evaluating all features within the time limit.
     """
+
+    _feature_selection_fit_time: int | None
+    """Time it took to perform the feature selection"""
+
+    _feature_selection_time_limit: int | None
+    """Time limit for the feature selection method."""
 
     _rng: np.random.Generator
     """Random number generator for fallback feature selection."""
@@ -115,6 +120,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         self._selected_features = None
         self._feature_scores = None
         self._outer_random_state = None
+        self._feature_selection_fit_time = None
+        self._feature_selection_time_limit = None
 
     def _fit_transform(
         self,
@@ -138,6 +145,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         # Init random generator
         self._rng = np.random.default_rng(self.random_state)
         self.problem_type = problem_type
+        self._feature_selection_time_limit = time_limit
 
         self._resolve_proxy_config(eval_metric=eval_metric, problem_type=problem_type)
         self._resolve_max_features()
@@ -154,6 +162,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
 
         # Call feature selection method
         feature_fit_kwargs = dict(X=X, y=y, time_limit=time_limit)
+        start_time = time.monotonic()
         if self.feature_scoring_method:
             self._feature_scores = self._fit_feature_scoring(**feature_fit_kwargs)
             assert isinstance(
@@ -172,6 +181,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
                 self._selected_features += self.fallback_feature_selection(
                     selected_features=self._selected_features
                 )
+            self._feature_selection_fit_time = time.monotonic() - start_time
+
         # Transform (aka select features)
         X_out = self._transform(X=X)
         assert list(X_out) == self._selected_features, "The output features must be the same as the selected features."
@@ -527,6 +538,13 @@ class AbstractITFeatureSelector(AbstractFeatureSelector):
             + cls._entropy(y, z, base=base)
             - cls._entropy(x, y, z, base=base)
             - cls._entropy(z, base=base)
+        )
+    
+    @classmethod
+    def _joint_mutual_information(self, x1, x2, y, base: float = 2):
+        """I((X1, X2); Y) = H(X1, X2) + H(Y) - H(X1, X2, Y)"""
+        return (
+            self._entropy(x1, x2, base=base) + self._entropy(y, base=base) - self._entropy(x1, x2, y, base=base)
         )
 
     @classmethod

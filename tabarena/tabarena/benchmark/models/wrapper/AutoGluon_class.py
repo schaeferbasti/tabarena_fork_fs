@@ -188,6 +188,8 @@ class AGWrapper(AbstractExecModel):
                         "feature_scores": generator._feature_scores,
                         "max_features": generator.max_features,
                         "max_features_input": generator.max_features_input,
+                        "feature_selection_fit_time": generator._feature_selection_fit_time,
+                        "feature_selection_time_limit": generator._feature_selection_time_limit
                     }
 
         return results
