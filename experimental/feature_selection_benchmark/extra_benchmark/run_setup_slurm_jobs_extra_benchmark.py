@@ -35,41 +35,41 @@ from fr_cluster_setup import ALL_TASK_METADATA, FSBenchmarkConfig, FS_TIME_LIMIT
 def build_jobs():
     method_names = FSBenchmarkConfig().get_default_preprocessing_configs(
         fs_methods=[
-            # "AccuracyFeatureSelector",
+            "AccuracyFeatureSelector",
             "RandomFeatureSelector",
-            # "ANOVAFeatureSelector",
-            # "CFSFeatureSelector",
-            # "Chi2FeatureSelector",
-            # "DISRFeatureSelector",
-            # "GainRatioFeatureSelector",
-            # "GiniFeatureSelector",
-            # "ImpurityFeatureSelector",
-            # "InformationGainFeatureSelector",
-            # "INTERACTFeatureSelector",
-            # "MarkovBlanketFeatureSelector",
-            # "MIFeatureSelector",
-            # "mRMRFeatureSelector",
-            # "PearsonCorrelationFeatureSelector",
-            # "ReliefFFeatureSelector",
-            # "RFImportanceFeatureSelector",
-            # "SequentialBackwardEliminationFeatureSelector",
-            # "SequentialForwardSelectionFeatureSelector",
-            # "SymmetricalUncertaintyFeatureSelector",
-            # "LassoFeatureSelector",
-            # "LaplacianScoreFeatureSelector",
-            # "ConsistencyFeatureSelector",
-            # "JMIFeatureSelector",
-            # "OneRFeatureSelector",
-            # "ElasticNetFeatureSelector",
-            # "CMIMFeatureSelector",
-            # "CARTFeatureSelector",
+            "ANOVAFeatureSelector",
+            "CFSFeatureSelector",
+            "Chi2FeatureSelector",
+            "DISRFeatureSelector",
+            "GainRatioFeatureSelector",
+            "GiniFeatureSelector",
+            "ImpurityFeatureSelector",
+            "InformationGainFeatureSelector",
+            "INTERACTFeatureSelector",
+            "MarkovBlanketFeatureSelector",
+            "MIFeatureSelector",
+            "mRMRFeatureSelector",
+            "PearsonCorrelationFeatureSelector",
+            "ReliefFFeatureSelector",
+            "RFImportanceFeatureSelector",
+            "SequentialBackwardEliminationFeatureSelector",
+            "SequentialForwardSelectionFeatureSelector",
+            "SymmetricalUncertaintyFeatureSelector",
+            "LassoFeatureSelector",
+            "LaplacianScoreFeatureSelector",
+            "ConsistencyFeatureSelector",
+            "JMIFeatureSelector",
+            "OneRFeatureSelector",
+            "ElasticNetFeatureSelector",
+            "CMIMFeatureSelector",
+            "CARTFeatureSelector",
         ]
     )
     task_ids = pd.read_csv(ALL_TASK_METADATA)["task_id_str"]
     task_ids.drop_duplicates(inplace=True)
     task_ids = task_ids.tolist()
 
-    modes = ["stability"]
+    modes = ["stability", "validity"]
     noises = [0.5, 0.75, 1.0]
     noise_types = ["gaussian"]
 
@@ -85,6 +85,7 @@ def build_jobs():
                                     mode=mode,
                                     method_name=method_name,
                                     data_foundry_task_id=task_id,
+                                    repeat=method_name.split("__")[-3],
                                     noise=noise,
                                     noise_type=noise_type,
                                 )
@@ -95,6 +96,9 @@ def build_jobs():
                             mode=mode,
                             method_name=method_name,
                             data_foundry_task_id=task_id,
+                            repeat=method_name.split("__")[-3],
+                            noise=None,
+                            noise_type=None,
                         )
                     )
     return jobs
@@ -104,9 +108,7 @@ def generate_job_array(jobs):
     """Return command args for each array task"""
     commands = []
     for i, job in enumerate(jobs):
-        args = f'"{job.mode}" "{job.method_name}" "{job.data_foundry_task_id}"'
-        if hasattr(job, 'noise'):
-            args += f' "{job.noise}" "{job.noise_type}"'
+        args = f'"{job.mode}" "{job.method_name}" "{job.data_foundry_task_id}" "{job.repeat}" "{job.noise}" "{job.noise_type}"'
         commands.append(args)
     return commands
 
@@ -173,7 +175,9 @@ eval "set -- $ARGS"
 MODE="$1"
 METHOD="$2"
 TASK="$3"
-REPEAT="${{4:-0}}"
+REPEAT="$4"
+NOISE="$5"
+NOISE_TYPE="$6"
 
 # Sanitize filename
 FILENAME=$(echo "${{MODE}}_${{METHOD}}_${{TASK}}" | tr '|: /[]()' '_' | sed 's/__*/_/g' | cut -c1-80)
@@ -190,7 +194,9 @@ python3 feature_selection_benchmark_runner.py \\
   --mode "$MODE" \\
   --method_name "$METHOD" \\
   --data_foundry_task_id "$TASK" \\
-  --repeat 1
+  --repeat "$REPEAT"
+  --noise "$NOISE" \\
+  --noise_type "$NOISE_TYPE"
 """
 
         batch_file = chunk_folder / f"fs_array_{chunk_id}.sh"

@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import re
 import numpy as np
 import pandas as pd
 from tabarena.benchmark.feature_selection_methods.feature_selection_benchmark_utils import (
@@ -65,7 +66,9 @@ def get_cache_path(job: ExtraBenchmarkJob) -> Path:
     cache_dir = Path(__file__).parent / "results"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    task_name = job.data_foundry_task_id.split("|")[3].split("/")[0]
+    task_name = job.data_foundry_task_id
+    task_name = re.sub(r'[|: /\[\]\(\)]', '_', task_name)
+    task_name = re.sub(r'_+', '_', task_name)
     safe_method = job.method_name.replace("/", "_").replace(" ", "_")
     safe_mode = job.mode.replace("/", "_").replace(" ", "_")
 
