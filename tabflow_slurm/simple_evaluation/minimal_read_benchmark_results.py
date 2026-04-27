@@ -36,6 +36,8 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             selected_feature_names = preprocessing_results["selected_feature_names"]
             feature_scores = preprocessing_results["feature_scores"]
             max_features = preprocessing_results["max_features"]
+            feature_selection_fit_time = preprocessing_results["feature_selection_fit_time"]
+            feature_selection_time_limit =  preprocessing_results["feature_selection_time_limit"]
 
         record = {
             "experiment_method_name_string": result.framework,
@@ -59,6 +61,8 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             "max_features": max_features,
             "feature_selection_budget_total": fe_total_budget,
             "feature_selection_budget_index": fe_budget_index,
+            "feature_selection_fit_time": feature_selection_fit_time,
+            "feature_selection_time_limit": feature_selection_time_limit,
         }
         records.append(record)
 
@@ -248,8 +252,8 @@ def main(
 
 if __name__ == "__main__":
     main(
-        data_path="/work/dlclarge2/purucker-tabarena/output",
-        benchmark_name="feature_selection_benchmark_example_2903",
+        data_path="/work/dlclarge1/purucker-fs_benchmark/output",
+        benchmark_name="feature_selection_benchmark_2026_minimal",
         output_dir="./evals",
         # no_ray=True,
     )

@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import tempfile
 import time
+import pandas as pd
+
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -65,13 +67,21 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     _feature_scores: dict[str, float] | None
     """Mapping from feature name to score (higher is more important).
     None if the feature selector is not fitted yet, or if the method does not compute feature scores.
-
     Note: this mapping may be incomplete, depending on the method and
     if the method finished evaluating all features within the time limit.
     """
 
+    _feature_selection_fit_time: int | None
+    """Time it took to perform the feature selection"""
+
+    _feature_selection_time_limit: int | None
+    """Time limit for the feature selection method."""
+
     _rng: np.random.Generator
     """Random number generator for fallback feature selection."""
+
+    _outer_random_state: int | None
+    """PLACEHOLDER"""
 
     problem_type: str | None
     """The problem type of the current dataset"""
@@ -109,6 +119,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
 
         self._selected_features = None
         self._feature_scores = None
+        self._outer_random_state = None
+        self._feature_selection_fit_time = None
+        self._feature_selection_time_limit = None
 
     def _fit_transform(
         self,
@@ -121,6 +134,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         **kwargs,  # noqa: ARG002
     ) -> tuple[pd.DataFrame, dict[str, list[str]]]:
         """Fit and transform for feature selection methods."""
+        if self._outer_random_state:
+            self.random_state = self._outer_random_state
+
         self._original_features = list(X.columns)
         old_type_family_groups_special = {}
         if self.feature_metadata_in.type_group_map_special is not None:
@@ -129,6 +145,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         # Init random generator
         self._rng = np.random.default_rng(self.random_state)
         self.problem_type = problem_type
+        self._feature_selection_time_limit = time_limit
 
         self._resolve_proxy_config(eval_metric=eval_metric, problem_type=problem_type)
         self._resolve_max_features()
@@ -145,6 +162,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
 
         # Call feature selection method
         feature_fit_kwargs = dict(X=X, y=y, time_limit=time_limit)
+        start_time = time.monotonic()
         if self.feature_scoring_method:
             self._feature_scores = self._fit_feature_scoring(**feature_fit_kwargs)
             assert isinstance(
@@ -153,7 +171,18 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             self._selected_features = self.selected_features_from_feature_scores()
         else:
             self._selected_features = self._fit_feature_selection(**feature_fit_kwargs)
-        assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+            assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+            if len(self._selected_features) < self.max_features:
+                self._log(30,
+                    f"Warning: Not enough features selected to reach {self.max_features}. "
+                    f"Selected {len(self._selected_features)} features from the method, "
+                    f"and randomly selected the rest."
+                )
+                self._selected_features += self.fallback_feature_selection(
+                    selected_features=self._selected_features
+                )
+            self._feature_selection_fit_time = time.monotonic() - start_time
+
         # Transform (aka select features)
         X_out = self._transform(X=X)
         assert list(X_out) == self._selected_features, "The output features must be the same as the selected features."
@@ -377,3 +406,165 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             )
             return True
         return False
+    
+    def _impute(
+        self, 
+        X: pd.DataFrame, 
+        numeric_strategy: str = "mean",
+        categorical_strategy: str = "most_frequent",
+    ) -> pd.DataFrame:
+        """Impute missing values separately for numeric and categorical features.
+        
+        Parameters
+        ----------
+        X: pd.DataFrame
+            Input data with potential missing values.
+        numeric_strategy: str
+            Strategy for numeric columns (mean, median, most_frequent, constant).
+        categorical_strategy: str
+            Strategy for categorical columns (most_frequent, constant).
+        
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with missing values imputed.
+        """
+        from sklearn.impute import SimpleImputer
+        
+        X_imputed = X.copy()
+        num_cols = X.select_dtypes(include="number").columns
+        cat_cols = X.select_dtypes(include=["object", "category"]).columns
+        
+        if len(num_cols):
+            X_imputed[num_cols] = SimpleImputer(strategy=numeric_strategy).fit_transform(X[num_cols])
+        if len(cat_cols):
+            X_imputed[cat_cols] = SimpleImputer(strategy=categorical_strategy).fit_transform(X[cat_cols])
+        
+        return X_imputed
+
+    def _discretize(self, X: pd.DataFrame) -> pd.DataFrame:
+        from sklearn.preprocessing import KBinsDiscretizer
+
+        X_disc = X.copy()
+        num_cols = X.select_dtypes(include="number").columns
+        max_bins = int(np.log2(len(X))) + 1  # sturges' rule to scale with size
+        
+        for col in num_cols:
+            n_bins = min(X[col].nunique(), max_bins)
+            if n_bins < 2:
+                continue  # constant feature, skip
+            X_disc[col] = KBinsDiscretizer(
+                n_bins=n_bins, encode="ordinal", strategy="quantile",
+                quantile_method="averaged_inverted_cdf"
+            ).fit_transform(X[[col]])
+        return X_disc 
+    
+    def _encode_ordinal(
+        self, 
+        X: pd.DataFrame, 
+        handle_unknown: str = "use_encoded_value",
+        unknown_value: int = -1,
+    ) -> pd.DataFrame:
+        from sklearn.preprocessing import OrdinalEncoder
+
+        X_enc = X.copy()
+        cat_cols = X.select_dtypes(include=["object", "category"]).columns
+        if len(cat_cols):
+            X_enc[cat_cols] = OrdinalEncoder(
+                handle_unknown=handle_unknown, unknown_value=unknown_value
+            ).fit_transform(X[cat_cols])
+        return X_enc
+
+    def _encode_target(self, y: pd.Series) -> pd.Series:
+        from sklearn.preprocessing import LabelEncoder
+        return pd.Series(LabelEncoder().fit_transform(y), index=y.index)
+
+    def _preprocess(
+            self, 
+            X: pd.DataFrame,
+            *,
+            y: pd.Series | None = None,
+            impute: bool = False,
+            discretize: bool = False,
+            encode_ordinal: bool = False,
+            encode_target: bool = False,
+            impute_kwargs: dict | None = None,
+            discretize_kwargs: dict | None = None,
+            encode_ordinal_kwargs: dict | None = None,
+        ) -> tuple[pd.DataFrame, pd.Series | None]:
+        """Convenience method bundling common preprocessing."""
+        if impute:
+            X = self._impute(X, **(impute_kwargs or {}))
+        if discretize:
+            X = self._discretize(X, **(discretize_kwargs or {}))
+        if encode_ordinal:
+            X = self._encode_ordinal(X, **(encode_ordinal_kwargs or {}))
+        if encode_target:
+            if y is None:
+                raise ValueError("encode_target=True requires y to be provided.")
+            y = self._encode_target(y)
+        return X, y
+    
+
+class AbstractITFeatureSelector(AbstractFeatureSelector):
+    """Base class for information-theory-based feature selectors.
+    
+    Provides shared entropy, mutual information, and symmetrical uncertainty
+    helpers used by MI, IG, JMI, CMIM, DISR, and CFS.
+    """
+
+    @staticmethod
+    def _entropy(*xs: pd.Series, base: float = 2) -> float:
+        """H(X1, X2, ..., Xk) — joint discrete entropy."""
+        if len(xs) == 1:
+            probs = xs[0].value_counts(normalize=True, dropna=False).values
+        else:
+            joint = pd.concat(xs, axis=1)
+            probs = joint.value_counts(normalize=True, dropna=False).values
+        if len(probs) <= 1:
+            return 0.0
+        return -np.sum(probs * np.log(probs)) / np.log(base)
+
+    @classmethod
+    def _mutual_information(cls, x: pd.Series, y: pd.Series, base: float = 2) -> float:
+        """I(X; Y) = H(X) + H(Y) - H(X, Y)."""
+        return cls._entropy(x, base=base) + cls._entropy(y, base=base) - cls._entropy(x, y, base=base)
+
+    @classmethod
+    def _conditional_mutual_information(cls, x, y, z, base: float = 2) -> float:
+        """I(X; Y | Z) = H(X, Z) + H(Y, Z) - H(X, Y, Z) - H(Z)."""
+        return (
+            cls._entropy(x, z, base=base)
+            + cls._entropy(y, z, base=base)
+            - cls._entropy(x, y, z, base=base)
+            - cls._entropy(z, base=base)
+        )
+    
+    @classmethod
+    def _joint_mutual_information(self, x1, x2, y, base: float = 2):
+        """I((X1, X2); Y) = H(X1, X2) + H(Y) - H(X1, X2, Y)"""
+        return (
+            self._entropy(x1, x2, base=base) + self._entropy(y, base=base) - self._entropy(x1, x2, y, base=base)
+        )
+
+    @classmethod
+    def _symmetrical_uncertainty(cls, x, y, base: float = 2) -> float:
+        """SU(X, Y) = 2 * I(X; Y) / (H(X) + H(Y))."""
+        hx = cls._entropy(x, base=base)
+        hy = cls._entropy(y, base=base)
+        if hx + hy == 0:
+            return 0.0
+        ixy = hx + hy - cls._entropy(x, y, base=base)
+        return 2.0 * ixy / (hx + hy)
+    
+    @classmethod
+    def _symmetrical_relevance(cls, x1, x2, y, base: float = 2) -> float:
+        """Normalized joint MI: I((X1, X2); Y) / H(X1, X2, Y). Used by DISR.
+        
+        Returns 0 if joint entropy is 0 (degenerate case).
+        """
+        joint_entropy = cls._entropy(x1, x2, y, base=base)
+        if joint_entropy == 0:
+            return 0.0
+        joint_mi = cls._joint_mutual_information(x1, x2, y, base=base)
+        return joint_mi / joint_entropy
