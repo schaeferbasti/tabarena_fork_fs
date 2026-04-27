@@ -20,7 +20,7 @@ class AccuracyFeatureSelector(AbstractFeatureSelector):
     def _fit_feature_scoring(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> dict[str, float]:
         start_time = time.monotonic()
         feature_scores = {}  # Store feature scores, higher is better
-        time_limit = 60
+
         try: # safeguard for AG model throwing a TimeExceededlimit error that would reset the already selected feature set 
             time_to_fit = max(0.0, time_limit - (time.monotonic() - start_time)) if time_limit is not None else None
             baseline_score = self.evaluate_proxy_model(X=X, y=y, time_limit=time_to_fit)

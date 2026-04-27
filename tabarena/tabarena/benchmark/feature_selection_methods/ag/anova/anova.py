@@ -33,4 +33,4 @@ class ANOVAFeatureSelector(AbstractFeatureSelector):
         anova = SelectKBest(score_func=score_func, k="all")
         anova.fit(X_pre, y)
         scores = np.nan_to_num(anova.scores_, nan=0.0) # in case of constant features that return nan
-        return dict(zip(X.columns, scores))
+        return dict(zip(X_pre.columns, scores))

@@ -22,11 +22,10 @@ class CFSFeatureSelector(AbstractITFeatureSelector):
     Hall, Mark A., and Lloyd A. Smith. "Feature selection for machine learning: comparing a correlation-based filter approach to the wrapper." 
     Proceedings of the twelfth international Florida artificial intelligence research society conference. 1999.
     The variation implemented here is a forward selection method using Symmetrical Uncertainty.
-    Changes to the implementation by Bastian Schäfer:
-                           - Add time constraint
-                           - Replaced merit-based early stopping with max_features constraint
-                           - Pad with random fallback if timeout cuts loop short
-                           - Use pandas instead of numpy and avoid conversion
+    Changes to the implementation:
+        - Time constraint
+        - Merit-based early stopping replaced with max_features constraint
+        - Use pandas instead of numpy and avoid conversion
     """
 
     name = "CFSFeatureSelector"
@@ -37,10 +36,10 @@ class CFSFeatureSelector(AbstractITFeatureSelector):
         *, 
         X: pd.DataFrame, 
         y: pd.Series, 
-        time_limit: int | None = None
+        time_limit: int | None = None # noqa: C901
     ) -> list[str]:
         start_time = time.monotonic()
-        F = []  # cfs score
+        F = []  # selected features indicies
 
         X_pre, _ = self._preprocess(X, impute=True, discretize=True, encode_ordinal=True)
 
@@ -62,15 +61,13 @@ class CFSFeatureSelector(AbstractITFeatureSelector):
                 break
             F.append(idx)
         selected_features = [self._original_features[i] for i in F]
-        if len(selected_features) < self.max_features:
-            selected_features += self.fallback_feature_selection(selected_features=selected_features)
         return [str(feat) for feat in selected_features]
 
     def merit_calculation(self, X, y):
         """This function calculates the merit of X given class labels y, where
         merits = (k * rcf) / sqrt (k + k*(k-1)*rff)
         rcf = (1/k)*sum(su(fi, y)) for all fi in X
-        rff = (1/(k*(k-1)))*sum(su(fi, fj)) for all fi and fj in X.
+        rff = (1/(k*(k-1)/2))*sum(su(fi, fj)) for all fi and fj in X.
 
         :param X:  {numpy array}, shape (n_samples, n_features) input data
         :param y:  {numpy array}, shape (n_samples) input class labels

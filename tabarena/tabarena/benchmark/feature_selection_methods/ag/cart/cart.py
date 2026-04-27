@@ -27,9 +27,9 @@ class CARTFeatureSelector(AbstractFeatureSelector):
         X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
 
         if self.problem_type == "regression":
-            CART = DecisionTreeRegressor(random_state=self.random_state)
+            cart = DecisionTreeRegressor(random_state=self.random_state)
         else:
-            CART = DecisionTreeClassifier(random_state=self.random_state)
-        CART.fit(X_pre, y)
-        importances = CART.feature_importances_
-        return dict(zip(X.columns, importances))
+            cart = DecisionTreeClassifier(random_state=self.random_state)
+        cart.fit(X_pre, y)
+        importances = cart.feature_importances_
+        return dict(zip(X_pre.columns, importances))
