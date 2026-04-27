@@ -28,7 +28,6 @@ NAME_TO_MODULE_MAP = {
     "MIFeatureSelector": "mi.mi",
     "mRMRFeatureSelector": "mrmr.mrmr",
     "OneRFeatureSelector": "one_r.one_r",
-    "PearsonCorrelationFeatureSelector": "pearson_correlation.pearson_correlation",
     "ReliefFFeatureSelector": "relief_f.relief_f",
     "RFImportanceFeatureSelector": "rf_importance.rf_importance",
     "SequentialBackwardEliminationFeatureSelector": "sbe.sbe",

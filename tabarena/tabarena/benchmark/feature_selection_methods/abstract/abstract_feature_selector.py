@@ -479,6 +479,14 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         from sklearn.preprocessing import LabelEncoder
         return pd.Series(LabelEncoder().fit_transform(y), index=y.index)
 
+    def _scale(X: pd.DataFrame) -> pd.DataFrame:
+        """Standardize features to zero mean and unit variance.
+        """
+        from sklearn.preprocessing import StandardScaler
+        scaler = StandardScaler()
+        scaled_array = scaler.fit_transform(X)
+        return pd.DataFrame(scaled_array, columns=X.columns, index=X.index)
+    
     def _preprocess(
             self, 
             X: pd.DataFrame,
@@ -488,6 +496,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             discretize: bool = False,
             encode_ordinal: bool = False,
             encode_target: bool = False,
+            scale: bool = False,
             impute_kwargs: dict | None = None,
             discretize_kwargs: dict | None = None,
             encode_ordinal_kwargs: dict | None = None,
@@ -503,6 +512,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             if y is None:
                 raise ValueError("encode_target=True requires y to be provided.")
             y = self._encode_target(y)
+        if scale:
+            X = self._scale(X)
         return X, y
     
 

@@ -24,8 +24,12 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
     fs_methods=[
         "AccuracyFeatureSelector",
         "RandomFeatureSelector",
+        "CARTFeatureSelector", 
+
         "ANOVAFeatureSelector",
+
         "ConsistencyFeatureSelector", 
+
         "CFSFeatureSelector",
         "DISRFeatureSelector",
         "GainRatioFeatureSelector",
@@ -33,12 +37,10 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
         "CMIMFeatureSelector", 
         "MIFeatureSelector",
         "JMIFeatureSelector", 
-        "CARTFeatureSelector", 
+        "mRMRFeatureSelector",
 
         # "INTERACTFeatureSelector",
         # "MarkovBlanketFeatureSelector",
-        # "mRMRFeatureSelector",
-        # "PearsonCorrelationFeatureSelector",
         # "ReliefFFeatureSelector",
         # "RFImportanceFeatureSelector",
         # "SequentialBackwardEliminationFeatureSelector",
@@ -54,6 +56,7 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
         # "ImpurityFeatureSelector",  # classification only
         # "tTestFeatureSelector", # classification only
         # "InformationGainFeatureSelector", # equivalent to MI but discretizes continuous vars, MI uses knn for calcuating entropy
+        # "PearsonCorrelationFeatureSelector", # doesn't work for multi-class classification
 
     ]
 )
