@@ -406,9 +406,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             )
             return True
         return False
-    
+   
+    @staticmethod
     def _impute(
-        self, 
         X: pd.DataFrame, 
         numeric_strategy: str = "mean",
         categorical_strategy: str = "most_frequent",
@@ -442,7 +442,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         
         return X_imputed
 
-    def _discretize(self, X: pd.DataFrame) -> pd.DataFrame:
+    @staticmethod
+    def _discretize(X: pd.DataFrame) -> pd.DataFrame:
         from sklearn.preprocessing import KBinsDiscretizer
 
         X_disc = X.copy()
@@ -459,8 +460,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             ).fit_transform(X[[col]])
         return X_disc 
     
+    @staticmethod
     def _encode_ordinal(
-        self, 
         X: pd.DataFrame, 
         handle_unknown: str = "use_encoded_value",
         unknown_value: int = -1,
@@ -475,10 +476,12 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             ).fit_transform(X[cat_cols])
         return X_enc
 
-    def _encode_target(self, y: pd.Series) -> pd.Series:
+    @staticmethod
+    def _encode_target(y: pd.Series) -> pd.Series:
         from sklearn.preprocessing import LabelEncoder
         return pd.Series(LabelEncoder().fit_transform(y), index=y.index)
 
+    @staticmethod
     def _scale(X: pd.DataFrame) -> pd.DataFrame:
         """Standardize features to zero mean and unit variance.
         """
@@ -500,7 +503,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             impute_kwargs: dict | None = None,
             discretize_kwargs: dict | None = None,
             encode_ordinal_kwargs: dict | None = None,
-        ) -> tuple[pd.DataFrame, pd.Series | None]:
+    ) -> tuple[pd.DataFrame, pd.Series | None]:
         """Convenience method bundling common preprocessing."""
         if impute:
             X = self._impute(X, **(impute_kwargs or {}))

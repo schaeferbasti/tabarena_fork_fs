@@ -38,6 +38,9 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
         "MIFeatureSelector",
         "JMIFeatureSelector", 
         "mRMRFeatureSelector",
+       
+        "LassoFeatureSelector", # just for regression but with label encoder for classification?
+        "ElasticNetFeatureSelector", # Only for classification
 
         # "INTERACTFeatureSelector",
         # "MarkovBlanketFeatureSelector",
@@ -45,10 +48,8 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
         # "RFImportanceFeatureSelector",
         # "SequentialBackwardEliminationFeatureSelector",
         # "SequentialForwardSelectionFeatureSelector",
-        # "LassoFeatureSelector", # just for regression but with label encoder for classification?
         # "LaplacianScoreFeatureSelector", # OOM, Segmentation fault issues
         # "OneRFeatureSelector", # major OOM errors (tries to allocate one major array), wrong time limit computation,  max(accuracies, key=accuracies.get) -> max() iterable argument is empty
-        # "ElasticNetFeatureSelector", # Only for classification
     
         #EXCLUDED
         # "Chi2FeatureSelector",  # classification only
