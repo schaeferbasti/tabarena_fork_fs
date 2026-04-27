@@ -25,32 +25,36 @@ preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
         "AccuracyFeatureSelector",
         "RandomFeatureSelector",
         "ANOVAFeatureSelector",
+        "ConsistencyFeatureSelector", 
         "CFSFeatureSelector",
-        "Chi2FeatureSelector",
         "DISRFeatureSelector",
         "GainRatioFeatureSelector",
-        "GiniFeatureSelector",
-        "ImpurityFeatureSelector",
-        "InformationGainFeatureSelector",
-        "INTERACTFeatureSelector",
-        "MarkovBlanketFeatureSelector",
-        "MIFeatureSelector",
-        "mRMRFeatureSelector",
-        "PearsonCorrelationFeatureSelector",
-        "ReliefFFeatureSelector",
-        "RFImportanceFeatureSelector",
-        "SequentialBackwardEliminationFeatureSelector",
-        "SequentialForwardSelectionFeatureSelector",
         "SymmetricalUncertaintyFeatureSelector",
+        "CMIMFeatureSelector", 
+        "MIFeatureSelector",
+        "JMIFeatureSelector", 
+        "CARTFeatureSelector", 
+
+        # "INTERACTFeatureSelector",
+        # "MarkovBlanketFeatureSelector",
+        # "mRMRFeatureSelector",
+        # "PearsonCorrelationFeatureSelector",
+        # "ReliefFFeatureSelector",
+        # "RFImportanceFeatureSelector",
+        # "SequentialBackwardEliminationFeatureSelector",
+        # "SequentialForwardSelectionFeatureSelector",
         # "LassoFeatureSelector", # just for regression but with label encoder for classification?
         # "LaplacianScoreFeatureSelector", # OOM, Segmentation fault issues
-        # "ConsistencyFeatureSelector", # selected_indices = np.where(S)[0].tolist(), UnboundLocalError: cannot access local variable 'S' where it is not associated with a value
-        # "JMIFeatureSelector", # time limit computed incorrectly, and error at remaining.remove(best_idx), ValueError: list.remove(x): x not in list
         # "OneRFeatureSelector", # major OOM errors (tries to allocate one major array), wrong time limit computation,  max(accuracies, key=accuracies.get) -> max() iterable argument is empty
         # "ElasticNetFeatureSelector", # Only for classification
-        # "CMIMFeatureSelector", # problems with time limit and fallback of features
-        # "tTestFeatureSelector", # Does not work for regression
-        # "CARTFeatureSelector", # Only implemented for classification, OOM problems as well
+    
+        #EXCLUDED
+        # "Chi2FeatureSelector",  # classification only
+        # "GiniFeatureSelector", # classification only
+        # "ImpurityFeatureSelector",  # classification only
+        # "tTestFeatureSelector", # classification only
+        # "InformationGainFeatureSelector", # equivalent to MI but discretizes continuous vars, MI uses knn for calcuating entropy
+
     ]
 )
 
