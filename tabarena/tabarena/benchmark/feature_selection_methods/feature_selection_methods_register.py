@@ -14,16 +14,12 @@ NAME_TO_MODULE_MAP = {
     "ANOVAFeatureSelector": "anova.anova",
     "CARTFeatureSelector": "cart.cart",
     "CFSFeatureSelector": "cfs.cfs",
-    "Chi2FeatureSelector": "chi2.chi2",
     "CMIMFeatureSelector": "cmim.cmim",
     "ConsistencyFeatureSelector": "consistency.consistency",
     "DISRFeatureSelector": "disr.disr",
     "ElasticNetFeatureSelector": "elastic_net.elastic_net",
     "FisherScoreFeatureSelector": "fisher_score.fisher_score",
     "GainRatioFeatureSelector": "gain_ratio.gain_ratio",
-    "GiniFeatureSelector": "gini.gini",
-    "ImpurityFeatureSelector": "impurity.impurity",
-    "InformationGainFeatureSelector": "information_gain.information_gain",
     "INTERACTFeatureSelector": "interact.interact",
     "JMIFeatureSelector": "jmi.jmi",
     "LaplacianScoreFeatureSelector": "laplacian_score.laplacian_score",
@@ -38,7 +34,6 @@ NAME_TO_MODULE_MAP = {
     "SequentialBackwardEliminationFeatureSelector": "sbe.sbe",
     "SequentialForwardSelectionFeatureSelector": "sfs.sfs",
     "SymmetricalUncertaintyFeatureSelector": "symmetrical_uncertainty.symmetrical_uncertainty",
-    "tTestFeatureSelector": "t_test.t_test",
 }
 FEATURE_SELECTION_METHODS = list(NAME_TO_MODULE_MAP.keys())
 FEATURE_SELECTION_METHODS_WITH_PROXY_MODEL = [
