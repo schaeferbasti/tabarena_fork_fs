@@ -556,3 +556,15 @@ class AbstractITFeatureSelector(AbstractFeatureSelector):
             return 0.0
         ixy = hx + hy - cls._entropy(x, y, base=base)
         return 2.0 * ixy / (hx + hy)
+    
+    @classmethod
+    def _symmetrical_relevance(cls, x1, x2, y, base: float = 2) -> float:
+        """Normalized joint MI: I((X1, X2); Y) / H(X1, X2, Y). Used by DISR.
+        
+        Returns 0 if joint entropy is 0 (degenerate case).
+        """
+        joint_entropy = cls._entropy(x1, x2, y, base=base)
+        if joint_entropy == 0:
+            return 0.0
+        joint_mi = cls._joint_mutual_information(x1, x2, y, base=base)
+        return joint_mi / joint_entropy
