@@ -39,6 +39,14 @@ class UniPathSetupDominika(PathSetup):
     venv_name: str = "fsbenchvenv2"
 
 @dataclass
+class UniPathSetupBastian(PathSetup):
+    """Path setup for Basti's environment."""
+
+    base_path: str = "/work/dlclarge1/purucker-fs_benchmark/"
+    tabarena_repo_name: str = "fsbench_schaefeb"
+    venv_name: str = "venv_fs_bench_schaefeb"
+
+@dataclass
 class UniSlurmSetup(SlurmSetup):
     """We can use mostly the defaults."""
     
