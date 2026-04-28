@@ -32,7 +32,6 @@ class ConsistencyFeatureSelector(AbstractFeatureSelector):
         n_trials = max(100, 10 * n_features) # random trials, will most likely timeout for high-dim datasets
         inconsistency_tolerance = 0.05 
         rng = np.random.default_rng(self._outer_random_state)
-
         
         best_size = n_features
         best_mask = np.ones(n_features, dtype=bool) 
