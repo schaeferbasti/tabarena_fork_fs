@@ -314,11 +314,12 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         time_limit: int | None = None,
         n_train_subsample: int | None = 10_000,
         n_val_fraction: float = 0.33,
-    ) -> float:
+    ) -> float | None:
         """Evaluate the proxy model on the given data."""
         from autogluon.core.models import BaggedEnsembleModel
         from autogluon.core.utils.utils import generate_train_test_split
         from autogluon.features.generators import AutoMLPipelineFeatureGenerator
+        from autogluon.core.utils.exceptions import NoValidFeatures
 
         if self.proxy_mode_config is None:
             raise ValueError(
@@ -373,25 +374,32 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         X_val, y_val = feature_generator.transform(X_val), label_cleaner.transform(y_val)
 
         # Run proxy model
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            model_kwargs["path"] = tmp_dir
-            if use_bagged_model:
-                model = BaggedEnsembleModel(
-                    model_class(**model_kwargs),
-                    hyperparameters=bagging_hps,
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                model_kwargs["path"] = tmp_dir
+                if use_bagged_model:
+                    model = BaggedEnsembleModel(
+                        model_class(**model_kwargs),
+                        hyperparameters=bagging_hps,
+                    )
+                else:
+                    model = model_class(**model_kwargs)
+                model.rename("FeatureSelector_" + model.name)
+                model.fit(
+                    X=X_train,
+                    y=y_train,
+                    time_limit=time_limit,
+                    num_classes=label_cleaner.num_classes,
+                    label_cleaner=label_cleaner,
                 )
-            else:
-                model = model_class(**model_kwargs)
-            model.rename("FeatureSelector_" + model.name)
-            model.fit(
-                X=X_train,
-                y=y_train,
-                time_limit=time_limit,
-                num_classes=label_cleaner.num_classes,
-                label_cleaner=label_cleaner,
+                score = model.score(X=X_val, y=y_val)
+        except NoValidFeatures:
+            self._log(
+                30,
+                "Proxy model received no valid features (all dropped as constant after split). "
+                "Returning None.",
             )
-            score = model.score(X=X_val, y=y_val)
-
+            return None
         # Ensure Python dtype
         return float(score)
     
