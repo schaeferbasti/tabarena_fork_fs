@@ -61,6 +61,7 @@ class SequentialBackwardEliminationFeatureSelector(AbstractFeatureSelector):
 
                 if worst_feature is None:
                     break
+                
                 current_features.remove(worst_feature)
 
         except TimeLimitExceeded:

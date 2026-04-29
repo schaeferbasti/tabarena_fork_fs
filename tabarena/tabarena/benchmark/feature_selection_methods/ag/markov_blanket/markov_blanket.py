@@ -32,7 +32,7 @@ class MarkovBlanketFeatureSelector(AbstractFeatureSelector):
 
         X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
 
-        G = list(X_pre.columns)
+        current_features = list(X_pre.columns)
 
         # Pearson correlation matrix (p_ij)
         corr = X_pre.corr(method="pearson").abs()
@@ -46,18 +46,18 @@ class MarkovBlanketFeatureSelector(AbstractFeatureSelector):
             clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=5000))
             scoring = "neg_log_loss"
 
-        for _ in range(min(self.max_features, len(G) - 1)):
+        while len(current_features) > self.max_features:
             if self._timed_out(time_limit, start_time):
                 break
 
-            best_feat = None
-            best_delta = np.inf
+            worst_feat = None
+            lowest_delta = np.inf
 
-            for fi in G:
+            for fi in current_features:
                 if self._timed_out(time_limit, start_time):
                     break
 
-                others = [fj for fj in G if fj != fi]
+                others = [fj for fj in current_features if fj != fi]
                 if not others:
                     continue
 
@@ -68,13 +68,13 @@ class MarkovBlanketFeatureSelector(AbstractFeatureSelector):
                 scores = cross_val_score(clf, X_pre[feat_set], y, cv=cv, scoring=scoring, error_score="raise")
                 delta = float(-scores.mean())
 
-                if delta < best_delta:
-                    best_delta = delta
-                    best_feat = fi
+                if delta < lowest_delta:
+                    lowest_delta = delta
+                    worst_feat = fi
 
-            if best_feat is None:
+            if worst_feat is None:
                 break
 
-            G.remove(best_feat)
+            current_features.remove(worst_feat)
 
-        return [str(feat) for feat in G]
+        return [str(feat) for feat in current_features]
