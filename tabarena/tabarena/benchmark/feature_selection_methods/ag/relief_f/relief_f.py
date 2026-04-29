@@ -18,11 +18,6 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
        Applied Intelligence 7.1 (1997): 39-55.
     2) Marko Robnik-Sikonja and Igor Kononenko. "An adaptation of Relief for attribute estimation in regression"
        International Conference on Machine Learning (1997): 296-304.
-
-    Changes to the original paper:
-        -  Nominal attributes are ordinal-encoded and treated as numeric rather than using the paper's 0/1 nominal diff.
-        Scores for nominal features therefore depend on the integer assignment of the encoder. This avoids the
-        dimensionality blow-up of one-hot encoding.
     """
 
     name = "ReliefFFeatureSelector"
@@ -34,15 +29,21 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
         start_time = time.monotonic()
         n_neighbors = 5  # local default; thread through to internal methods
 
+        is_nominal = X.dtypes.apply(
+            lambda dt: pd.api.types.is_object_dtype(dt)
+                or isinstance(dt, pd.CategoricalDtype)
+                or pd.api.types.is_bool_dtype(dt)
+        ).to_numpy()
+
         X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
         X_arr = self._minmax_scale(X_pre.to_numpy())
         y_arr = np.asarray(y)
         columns = list(X_pre.columns)
 
         if self.problem_type == "regression":
-            scores = self._rrelieff(X_arr, y_arr, n_neighbors, time_limit, start_time)
+            scores = self._rrelieff(X_arr, y_arr, n_neighbors, is_nominal, time_limit, start_time)
         else:
-            scores = self._relieff(X_arr, y_arr, n_neighbors, time_limit, start_time)
+            scores = self._relieff(X_arr, y_arr, n_neighbors, is_nominal, time_limit, start_time)
 
         return dict(zip(columns, scores))
 
@@ -53,9 +54,37 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
         X_range = X.max(axis=0) - X_min
         X_range[X_range == 0] = 1.0
         return (X - X_min) / X_range
+    
+    @staticmethod
+    def _diff(A: np.ndarray, b: np.ndarray, is_nominal: np.ndarray) -> np.ndarray:
+        """Per-feature diff between rows of A and a single row b.
+
+        Numeric features: |a − b| (with a, b in [0,1] after min-max scaling).
+        Nominal features: 1{a ≠ b}.
+        """
+        out = np.abs(A - b)
+        if is_nominal.any():
+            out[:, is_nominal] = (A[:, is_nominal] != b[is_nominal]).astype(float)
+        return out
+    
+    @staticmethod
+    def _make_diff_metric(is_nominal: np.ndarray):
+        """Build a Manhattan-style metric using per-feature diff (numeric: |a−b|, nominal: 1{a≠b})."""
+        nominal_mask = is_nominal.astype(bool)
+        numeric_mask = ~nominal_mask
+
+        def metric(a: np.ndarray, b: np.ndarray) -> float:
+            d = 0.0
+            if numeric_mask.any():
+                d += float(np.abs(a[numeric_mask] - b[numeric_mask]).sum())
+            if nominal_mask.any():
+                d += float((a[nominal_mask] != b[nominal_mask]).sum())
+            return d
+
+        return metric
 
     def _relieff(
-        self, X: np.ndarray, y: np.ndarray, n_neighbors: int,
+        self, X: np.ndarray, y: np.ndarray, n_neighbors: int, is_nominal: np.ndarray,
         time_limit: int | None, start_time: float,
     ) -> np.ndarray:
         """ReliefF (for classification)."""
@@ -66,15 +95,20 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
         classes, counts = np.unique(y, return_counts=True)
         priors = dict(zip(classes, counts / n))
 
+        diff_metric = self._make_diff_metric(is_nominal)
+
         # kNN per class: O(nk) instead of O(n²) memory for the distance matrix.
         nn_per_class = {}
         for c in classes:
             mask = y == c
             if mask.sum() <= 1:
-                continue  # singleton or empty class — can't compute hits
+                continue  # singleton or empty class 
             nn_per_class[c] = (
-                NearestNeighbors(n_neighbors=min(k + 1, mask.sum()), metric="manhattan")
-                .fit(X[mask]),
+                NearestNeighbors(
+                    n_neighbors=min(k + 1, mask.sum()),
+                    metric=diff_metric,
+                    algorithm="brute",  
+                ).fit(X[mask]),
                 np.where(mask)[0],
             )
 
@@ -82,7 +116,8 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
             if self._timed_out(time_limit, start_time):
                 break
 
-            xi = X[i:i+1]
+            xi = X[i]
+            xi_2d = xi[None, :]
             yi = y[i]
 
             # Skip samples whose class wasn't built (singleton classes).
@@ -92,7 +127,7 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
 
             # Hits: k nearest same-class neighbors (excluding self at index 0)
             hit_nbrs, hit_idx_map = nn_per_class[yi]
-            _, hit_local = hit_nbrs.kneighbors(xi)
+            _, hit_local = hit_nbrs.kneighbors(xi_2d)
             hit_global = hit_idx_map[hit_local[0][1:k+1]]
 
             # Small-class guard: if a class has < k+1 samples, we get fewer than
@@ -100,7 +135,7 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
             n_hits = len(hit_global)
             if n_hits == 0:
                 continue
-            hit_diff = np.abs(X[hit_global] - xi).sum(axis=0) / n_hits
+            hit_diff = self._diff(X[hit_global], xi, is_nominal).sum(axis=0) / n_hits # dtype-aware
 
             # Misses: k nearest neighbors per other class, weighted by prior.
             miss_diff = np.zeros(d)
@@ -108,7 +143,7 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
                 if c == yi or c not in nn_per_class:
                     continue
                 miss_nbrs, miss_idx_map = nn_per_class[c]
-                _, miss_local = miss_nbrs.kneighbors(xi)
+                _, miss_local = miss_nbrs.kneighbors(xi_2d)
                 miss_global = miss_idx_map[miss_local[0][:k]]
 
                 # Same small-class guard for miss division.
@@ -116,14 +151,14 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
                 if n_misses == 0:
                     continue
                 weight = priors[c] / (1 - p_yi)
-                miss_diff += weight * np.abs(X[miss_global] - xi).sum(axis=0) / n_misses
+                miss_diff += weight * self._diff(X[miss_global], xi, is_nominal).sum(axis=0) / n_misses # dtype-aware
 
             scores += miss_diff - hit_diff
 
         return scores / n
 
     def _rrelieff(
-        self, X: np.ndarray, y: np.ndarray, n_neighbors: int,
+        self, X: np.ndarray, y: np.ndarray, n_neighbors: int, is_nominal: np.ndarray,
         time_limit: int | None, start_time: float,
     ) -> np.ndarray:
         """RReliefF for regression.
@@ -145,8 +180,11 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
         y_norm = (y - y_min) / y_range
 
         # kNN over the full dataset (no class structure for regression).
-        nbrs = NearestNeighbors(n_neighbors=k + 1, metric="manhattan").fit(X)
-
+        diff_metric = self._make_diff_metric(is_nominal)
+        nbrs = NearestNeighbors(
+            n_neighbors=k + 1, metric=diff_metric, algorithm="brute",
+        ).fit(X)
+        
         N_dY = 0.0
         N_dF = np.zeros(d)
         N_dY_dF = np.zeros(d)
@@ -163,7 +201,7 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
             dy = np.abs(y_norm[i] - y_norm[neighbors])      # shape (k,)
             # d(x_f) for each neighbor and feature: |x_if - x_jf|
             # X is min-max scaled to [0,1], so dx values are also in [0, 1].
-            dx = np.abs(X[i] - X[neighbors])                # shape (k, d)
+            dx = self._diff(X[neighbors], X[i], is_nominal)  # shape (k, d)
 
             N_dY += dy.sum()
             N_dF += dx.sum(axis=0)
