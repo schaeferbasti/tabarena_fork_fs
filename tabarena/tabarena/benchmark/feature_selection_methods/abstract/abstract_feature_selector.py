@@ -535,6 +535,22 @@ class AbstractITFeatureSelector(AbstractFeatureSelector):
     helpers used by MI, IG, JMI, CMIM, DISR, and CFS.
     """
 
+    def _mutual_information_dispatched(self, x: pd.Series, y: pd.Series, base: float = 2) -> float:
+        """
+        Helper for calculating MI for continuous target (requires density function estimation for entropy.
+        Used in GainRatio and mRMR.
+        """
+        if self.problem_type == "regression":
+            from sklearn.feature_selection import mutual_info_regression
+            mi_nat_log = mutual_info_regression(
+                x.values.reshape(-1, 1),
+                y.values,
+                discrete_features=True, # all features discretized
+                random_state=self.random_state,
+            )[0]
+            return mi_nat_log / np.log(base)
+        return self._mutual_information(x, y, base=base)   
+
     @staticmethod
     def _entropy(*xs: pd.Series, base: float = 2) -> float:
         """H(X1, X2, ..., Xk) — joint discrete entropy."""

@@ -38,7 +38,7 @@ class mRMRFeatureSelector(AbstractITFeatureSelector):  # noqa: N801
         n_features = len(X_pre.columns)
         cols = [X_pre.iloc[:, i] for i in range(n_features)]
 
-        relevance = np.array([self._mutual_information(col, y) for col in cols]) # mi for all features and target 
+        relevance = np.array([self._mutual_information_dispatched(col, y) for col in cols]) # mi for all features and target 
         mi_pairs: dict[tuple[int, int], float] = {} # mi_pairs[(i, j)] = I(X_i; X_j); symmetric so we only store i < j
        
         def get_pair_mi(i: int, j: int) -> float:

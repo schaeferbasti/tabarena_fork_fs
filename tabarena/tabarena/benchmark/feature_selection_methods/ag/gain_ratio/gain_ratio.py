@@ -36,7 +36,7 @@ class GainRatioFeatureSelector(AbstractITFeatureSelector):
             if self._timed_out(time_limit, start_time):
                 break
             feature = X_pre[col]
-            info_gain = self._mutual_information(feature, y)
+            info_gain = self._mutual_information_dispatched(feature, y)
             split_info = self._entropy(feature)
             igr_scores[col] = info_gain / split_info if split_info > 0 else 0.0
 
