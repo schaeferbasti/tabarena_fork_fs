@@ -41,7 +41,7 @@ git clone https://github.com/autogluon/autogluon.git
 git clone https://github.com/schaeferbasti/tabarena_fork_fs.git
 ```
 
-### Example Run
+## Example Run
 
 ```
 cd examples/benchmarking
@@ -49,6 +49,6 @@ python run_quickstart_selectarena.py
 ```
 
 
-# Downloading and using SelectArena Artifacts
+## Downloading and using SelectArena Artifacts
 
 Artifacts are .csv files containing the metric results for each dataset and model. These are used for evaluation and analysis.
