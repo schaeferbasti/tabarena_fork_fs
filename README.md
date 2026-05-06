@@ -48,6 +48,9 @@ cd examples/benchmarking
 python run_quickstart_selectarena.py 
 ```
 
+#### Minor Remarks:
+ANOVA is called F-Test in the paper, Sequential Forward Selection is called SFS in the paper, and Sequential Backward Selection is called RFE in the paper. 
+ReliefF is called (R)ReliefF in the paper, Accuracy is called LOCO.
 
 ## Downloading and using SelectArena Artifacts
 
