@@ -35,70 +35,60 @@ from fr_cluster_setup import ALL_TASK_METADATA, FSBenchmarkConfig, FS_TIME_LIMIT
 def build_jobs():
     method_names = FSBenchmarkConfig().get_default_preprocessing_configs(
         fs_methods=[
-            "AccuracyFeatureSelector",
             "RandomFeatureSelector",
             "ANOVAFeatureSelector",
-            "CFSFeatureSelector",
-            "Chi2FeatureSelector",
-            "DISRFeatureSelector",
+            # "CFSFeatureSelector",
+            # "Chi2FeatureSelector",
+            # "DISRFeatureSelector",
             "GainRatioFeatureSelector",
-            "GiniFeatureSelector",
-            "ImpurityFeatureSelector",
-            "InformationGainFeatureSelector",
-            "INTERACTFeatureSelector",
+            # "GiniFeatureSelector",
+            # "ImpurityFeatureSelector",
+            # "InformationGainFeatureSelector",
+            # "INTERACTFeatureSelector",
             "MarkovBlanketFeatureSelector",
             "MIFeatureSelector",
             "mRMRFeatureSelector",
-            "PearsonCorrelationFeatureSelector",
+            # "PearsonCorrelationFeatureSelector",
             "ReliefFFeatureSelector",
             "RFImportanceFeatureSelector",
             "SequentialBackwardEliminationFeatureSelector",
             "SequentialForwardSelectionFeatureSelector",
-            "SymmetricalUncertaintyFeatureSelector",
+            # "SymmetricalUncertaintyFeatureSelector",
             "LassoFeatureSelector",
             "LaplacianScoreFeatureSelector",
-            "ConsistencyFeatureSelector",
-            "JMIFeatureSelector",
-            "OneRFeatureSelector",
+            # "ConsistencyFeatureSelector",
+            # "FisherScoreFeatureSelector",
+            # "JMIFeatureSelector",
+            # "OneRFeatureSelector",
             "ElasticNetFeatureSelector",
-            "CMIMFeatureSelector",
+            # "CMIMFeatureSelector",
             "CARTFeatureSelector",
+            "AccuracyFeatureSelector",
         ]
     )
     task_ids = pd.read_csv(ALL_TASK_METADATA)["task_id_str"]
     task_ids.drop_duplicates(inplace=True)
     task_ids = task_ids.tolist()
 
-    modes = ["stability", "validity"]
-    noises = [0.5, 0.75, 1.0]
-    noise_types = ["gaussian"]
-
+    modes = ["validity"]
     jobs = []
     for mode in modes:
         for method_name in method_names:
             for task_id in task_ids:
                 if mode == "validity":
-                    for noise in noises:
-                        for noise_type in noise_types:
-                            jobs.append(
-                                ExtraBenchmarkJob(
-                                    mode=mode,
-                                    method_name=method_name,
-                                    data_foundry_task_id=task_id,
-                                    repeat=method_name.split("__")[-3],
-                                    noise=noise,
-                                    noise_type=noise_type,
-                                )
-                            )
+                    jobs.append(
+                        ExtraBenchmarkJob(
+                            mode=mode,
+                            method_name=method_name,
+                            data_foundry_task_id=task_id,
+                        )
+                    )
                 else:
                     jobs.append(
                         ExtraBenchmarkJob(
                             mode=mode,
                             method_name=method_name,
                             data_foundry_task_id=task_id,
-                            repeat=method_name.split("__")[-3],
-                            noise=None,
-                            noise_type=None,
                         )
                     )
     return jobs
@@ -141,10 +131,10 @@ if __name__ == "__main__":
 
         script = f"""#!/bin/bash
 #SBATCH --job-name=fs_bench_{chunk_id}
-#SBATCH --partition=mldlc2_cpu-epyc9655
+#SBATCH --partition=mlhiwidlc_gpu-rtx2080
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
-#SBATCH --time={FS_TIME_LIMIT // 3600}:00:00
+#SBATCH --time=10:00:00
 #SBATCH --array={start}-{end - 1}%{PARALLEL}
 #SBATCH --output="{chunk_folder.absolute()}/slurm-%A_%a.out"
 #SBATCH --error="{chunk_folder.absolute()}/slurm-%A_%a.err"
@@ -160,8 +150,8 @@ JOB_ROOT="$SUBMIT_DIR/$SLURM_ARRAY_JOB_ID"
 mkdir -p "$JOB_ROOT"
 
 # Copy artifacts (absolute paths)
-cp "$SUBMIT_DIR/job_commands.txt" "$JOB_ROOT/"
-cp "$0" "$JOB_ROOT/"
+\\cp -f "$SUBMIT_DIR/job_commands.txt" "$JOB_ROOT/"
+\\cp -f "$0" "$JOB_ROOT/"
 
 LINE_NO=$((SLURM_ARRAY_TASK_ID + 1))
 ARGS=$(sed -n "${{LINE_NO}}p" "$SUBMIT_DIR/job_commands.txt")
@@ -194,9 +184,6 @@ python3 feature_selection_benchmark_runner.py \\
   --mode "$MODE" \\
   --method_name "$METHOD" \\
   --data_foundry_task_id "$TASK" \\
-  --repeat "$REPEAT"
-  --noise "$NOISE" \\
-  --noise_type "$NOISE_TYPE"
 """
 
         batch_file = chunk_folder / f"fs_array_{chunk_id}.sh"
