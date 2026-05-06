@@ -55,13 +55,16 @@ class SequentialBackwardEliminationFeatureSelector(AbstractFeatureSelector):
                     score = self.evaluate_proxy_model(X=test_X, y=y, time_limit=time_to_fit)
                     del test_X
 
+                    if score is None:
+                        continue
+                    
                     if score > worst_score:
                         worst_score = score
                         worst_feature = feature
 
                 if worst_feature is None:
                     break
-                
+
                 current_features.remove(worst_feature)
 
         except TimeLimitExceeded:

@@ -54,6 +54,9 @@ class SequentialForwardSelectionFeatureSelector(AbstractFeatureSelector):
                     score = self.evaluate_proxy_model(X=test_X, y=y, time_limit=time_to_fit)
                     del test_X
 
+                    if score is None:
+                        continue
+
                     if score > best_score:
                         best_score = score
                         best_feature = feature
