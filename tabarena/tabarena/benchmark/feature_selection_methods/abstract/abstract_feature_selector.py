@@ -181,7 +181,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
                 self._selected_features += self.fallback_feature_selection(
                     selected_features=self._selected_features
                 )
-            self._feature_selection_fit_time = time.monotonic() - start_time
+        self._feature_selection_fit_time = time.monotonic() - start_time
 
         # Transform (aka select features)
         X_out = self._transform(X=X)
