@@ -1,111 +1,71 @@
 """Double Input Symmetrical Relevance (DISR) feature selection."""
 from __future__ import annotations
 
-import logging
 import time
-from math import log
-from typing import TYPE_CHECKING
-
+import pandas as pd
 import numpy as np
 
-from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
-
-if TYPE_CHECKING:
-    import pandas as pd
-
-logger = logging.getLogger(__name__)
+from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractITFeatureSelector
 
 
-class DISRFeatureSelector(AbstractFeatureSelector):
+class DISRFeatureSelector(AbstractITFeatureSelector):
     """DISR Feature Selection.
 
-    Reference: Meyer, Patrick E., and Gianluca Bontempi. "On the use
-    of variable complementarity for feature selection in cancer
-    classification." Workshops on applications of evolutionary
-    computation. Berlin, Heidelberg: Springer Berlin Heidelberg, 2006.
-    Implementation Source:
-    https://github.com/jundongl/scikit-feature/blob/48cffad4e88ff4b9d2f1c7baffb314d1b3303792/skfeature/function/information_theoretical_based/DISR.py#L5.
-    The author of the code is Li, Jundong, Associate Professor at the
-    University of Virginia and main-author of
-    'Feature selection: A data perspective' (2017).
-    Changes to the implementation by Bastian Schäfer:
-                           - Add time constraint
-                           - Code adapted so that the formula in the paper is used, the parts of the formula
-                             are calculated using the code of the implementation source
-                           - Use pandas instead of numpy and avoid conversion
+    Reference: Meyer, Patrick E., and Gianluca Bontempi. "On the use of variable complementarity for feature selection in cancer classification." 
+    Workshops on applications of evolutionary computation. Berlin, Heidelberg: Springer Berlin Heidelberg, 2006.
+    Implementation Inspiration: https://github.com/jundongl/scikit-feature/blob/48cffad4e88ff4b9d2f1c7baffb314d1b3303792/skfeature/function/information_theoretical_based/JMI.py#L4
+    The author of the code is Li, Jundong, Associate Professor at the University of Virginia and main-author of 'Feature selection: A data perspective' (2017).
+    
+    We extend the Joint Mutual Information (jmi.py) implementation by normalizing each joint MI term by the joint entropy H(X_i, X_j, Y):
+    criterion = argmax_i sum_{j in F} I((X_i, X_j); Y) / H(X_i, X_j, Y)
     """
 
     name = "DISRFeatureSelector"
-    feature_scoring_method: bool = True
+    feature_scoring_method: bool = False
 
-    def _fit_feature_scoring(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> dict[str, float]:
-        start_time = time.monotonic()
-        n_features = len(X.columns)
-        DISR = np.zeros(n_features)
-        mutual_information = np.zeros(n_features)
-        entropy = np.zeros(n_features)
-        for i in range(n_features):
-            elapsed_time = time.time() - start_time
-            if (time_limit is not None) and (elapsed_time >= time_limit):
-                logger.warning(
-                    f"Warning: FeatureSelection Method has no time left to train... "
-                    f"\t(Time Elapsed = {elapsed_time:.1f}s, Time Limit = {time_limit:.1f}s)"
-                )
-                break
-            f = X.iloc[:, i]
-            mutual_information[i] = self.midd(f, y)
-            entropy[i] = self.entropyd(list(zip(f, y)))
-            symmetrical_relevance = mutual_information[i] / entropy[i]
-            DISR[i] = symmetrical_relevance
-        return dict(zip(X.columns, DISR))
-
-    def conditional_entropy(self, f1, f2):
-        """This function calculates the conditional entropy, where ce = H(f1) - I(f1;f2).
-
-        Input
-        -----
-        f1: {numpy array}, shape (n_samples,)
-        f2: {numpy array}, shape (n_samples,)
-
-        Output
-        ------
-        ce: {float}
-            ce is conditional entropy of f1 and f2
+    def _fit_feature_selection(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> list[str]:
         """
-        return self.entropyd(f1) - self.midd(f1, f2)
+        Step 1: select first feature by plain MI — i1 = argmax_i I(X_i; Y)
+        Step 2: greedy forward, select at each step:
+                i_k = argmax_i sum_{j in selected} I((X_i, X_j); Y) / H(X_i, X_j, Y)
+        """
+        start_time = time.monotonic()
+        X_pre, _ = self._preprocess(X, impute=True, discretize=True, encode_ordinal=True)
+        n_features = len(X_pre.columns)
+        cols = [X_pre.iloc[:, i] for i in range(n_features)]
 
-    def midd(self, x, y):
-        """Discrete mutual information estimator given a list of samples which can be any hashable object."""
-        return -self.entropyd(list(zip(x, y))) + self.entropyd(x) + self.entropyd(y)
+        # step 1
+        mi_scores = np.array([self._mutual_information(col, y) for col in cols])
+        first = int(np.argmax(mi_scores))
+        selected: list[int] = [first]
+        selected_mask = np.zeros(n_features, dtype=bool)
+        selected_mask[first] = True
 
-    def entropyd(self, sx, base=2):
-        """Discrete entropy estimator given a list of samples which can be any hashable object."""
-        return self.entropyfromprobs(self.hist(sx), base=base)
+        # step 2
+        while len(selected) < self.max_features:
+            if self._timed_out(time_limit, start_time): 
+                break
 
-    def cmidd(self, x, y, z):
-        """Discrete mutual information estimator given a list of samples which can be any hashable object."""
-        return (
-            self.entropyd(list(zip(y, z)))
-            + self.entropyd(list(zip(x, z)))
-            - self.entropyd(list(zip(x, y, z)))
-            - self.entropyd(z)
-        )
+            best_score = -np.inf
+            best_idx = None
+        
+            for i in range(n_features):
+                if selected_mask[i]:
+                        continue
+                if self._timed_out(time_limit, start_time): 
+                    break
+                # joint mi/entropy
+                score = sum(
+                    self._symmetrical_relevance(cols[i], cols[j], y)
+                    for j in selected
+                )
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
+                
+            if best_idx is None:
+                break
+            selected.append(best_idx)
+            selected_mask[best_idx] = True
 
-    @staticmethod
-    def hist(sx):
-        """Compute histogram (probability distribution) from a list of samples."""
-        d = dict()
-        for s in sx:
-            d[s] = d.get(s, 0) + 1
-        return (float(z) / len(sx) for z in d.values())
-
-    def entropyfromprobs(self, probs, base=2):
-        """Compute entropy from a probability distribution."""
-        return -sum(map(self.elog, probs)) / log(base)
-
-    @staticmethod
-    def elog(x):
-        """Compute x*log(x), returning 0 for x <= 0 or x >= 1."""
-        if x <= 0.0 or x >= 1.0:
-            return 0
-        return x * log(x)
+        return [str(self._original_features[i]) for i in selected]

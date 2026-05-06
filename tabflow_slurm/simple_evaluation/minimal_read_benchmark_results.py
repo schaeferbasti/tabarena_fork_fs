@@ -27,6 +27,7 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             feature_selection_method, feature_selection_is_scoring_method = None, None
             original_feature_names, selected_feature_names, feature_scores = None, None, None
             max_features = None
+            feature_selection_fit_time, feature_selection_time_limit = None, None
         else:
             fe_total_budget = preprocessing_results["max_features_input"].keywords["b"]
             fe_budget_index = preprocessing_results["max_features_input"].keywords["idx"]
@@ -36,6 +37,8 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             selected_feature_names = preprocessing_results["selected_feature_names"]
             feature_scores = preprocessing_results["feature_scores"]
             max_features = preprocessing_results["max_features"]
+            feature_selection_fit_time = preprocessing_results["feature_selection_fit_time"]
+            feature_selection_time_limit =  preprocessing_results["feature_selection_time_limit"]
 
         record = {
             "experiment_method_name_string": result.framework,
@@ -53,12 +56,14 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             # Preprocessing things
             "feature_selection_method": feature_selection_method,
             "feature_selection_is_scoring_method": feature_selection_is_scoring_method,
-            "original_feature_names": original_feature_names,
+            # "original_feature_names": original_feature_names,
             "selected_feature_names": selected_feature_names,
-            "feature_scores": feature_scores,
+            # "feature_scores": feature_scores,
             "max_features": max_features,
             "feature_selection_budget_total": fe_total_budget,
             "feature_selection_budget_index": fe_budget_index,
+            "feature_selection_fit_time": feature_selection_fit_time,
+            "feature_selection_time_limit": feature_selection_time_limit,
         }
         records.append(record)
 
@@ -78,6 +83,7 @@ def read_benchmark_results(
     num_cpus: int = 8,
     batch_size: int = 1000,
     no_ray: bool = False,
+    only_default: bool = True,
 ) -> pd.DataFrame:
     """Find all results.pkl under *data_path*, parse them in parallel, return a DataFrame.
 
@@ -97,6 +103,10 @@ def read_benchmark_results(
         Number of pickle files processed by a single Ray worker call.
     no_ray : bool
         If True, run sequentially in the current process without Ray (useful for debugging).
+    only_default : bool
+        If True (default), only include results from subfolders containing ``_c1_`` in their
+        name (default-config experiments). When False, include all results, including random
+        configurations (``_r1_``, ``_r2_``, ...).
 
     Returns:
     -------
@@ -116,6 +126,14 @@ def read_benchmark_results(
     print(f"Searching for results.pkl under: {data_path}")
     file_paths = fetch_all_pickles(dir_path=data_path, suffix="results.pkl")
     print(f"Found {len(file_paths)} results.pkl files.")
+
+    if only_default:
+        before = len(file_paths)
+        file_paths = [p for p in file_paths if "_c1_" in str(p)]
+        print(
+            f"only_default=True: filtered to {len(file_paths)} files containing '_c1_' "
+            f"(removed {before - len(file_paths)} non-default-config files)."
+        )
 
     if not file_paths:
         return pd.DataFrame()
@@ -146,7 +164,7 @@ def read_benchmark_results(
             num_cpus_per_worker=1,
             track_progress=True,
             tqdm_kwargs={"desc": "Parsing results"},
-            ray_remote_kwargs={"max_calls": 0},
+            ray_remote_kwargs={"max_calls": 1},
         )
 
     records = [record for batch in nested_records for record in batch]
@@ -168,6 +186,7 @@ def main(
     num_cpus: int | None = None,
     batch_size: int | None = None,
     no_ray: bool = False,
+    only_default: bool = True,
 ) -> pd.DataFrame:
     """Entry point that works both as a direct call and as a CLI script.
 
@@ -189,6 +208,9 @@ def main(
         Pickle files per worker call. Defaults to 1000.
     no_ray : bool
         If True, run sequentially without Ray (useful for debugging).
+    only_default : bool
+        If True (default), only include subfolders containing ``_c1_`` (default-config
+        experiments). Pass ``--no-only_default`` on the CLI to include random configs too.
     """
     if data_path is None or num_cpus is None or batch_size is None or output_dir is None:
         parser = argparse.ArgumentParser(description="Parse benchmark results.pkl files into a CSV.")
@@ -218,6 +240,14 @@ def main(
         parser.add_argument(
             "--no_ray", action="store_true", help="Run sequentially without Ray (useful for debugging)."
         )
+        parser.add_argument(
+            "--only_default",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="If set (default), only include subfolders containing '_c1_' "
+            "(default-config experiments). Use --no-only_default to include random "
+            "configurations such as _r1_, _r2_, etc.",
+        )
         args = parser.parse_args()
 
         if data_path is None:
@@ -232,6 +262,10 @@ def main(
             batch_size = args.batch_size
         if not no_ray:
             no_ray = args.no_ray
+        # only_default defaults to True; pick up the CLI value if the function caller
+        # left it at the default. Mirrors the no_ray pattern above.
+        if only_default:
+            only_default = args.only_default
 
     if data_path is None:
         raise ValueError("data_path must be provided either as an argument or via --data_path.")
@@ -243,13 +277,15 @@ def main(
         num_cpus=num_cpus if num_cpus is not None else 8,
         batch_size=batch_size if batch_size is not None else 1000,
         no_ray=no_ray,
+        only_default=only_default,
     )
 
 
 if __name__ == "__main__":
     main(
-        data_path="/work/dlclarge2/purucker-tabarena/output",
-        benchmark_name="feature_selection_benchmark_example_2903",
+        data_path="/work/dlclarge1/purucker-fs_benchmark/output",
+        benchmark_name="feature_selection_benchmark_2026_all",
         output_dir="./evals",
         # no_ray=True,
+        # only_default=False,  # uncomment to also include random configs (_r1_, _r2_, ...)
     )

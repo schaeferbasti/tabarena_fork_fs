@@ -1,16 +1,10 @@
 """CART (decision tree) feature selection."""
 from __future__ import annotations
 
-import logging
-
 import pandas as pd
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
-
-logger = logging.getLogger(__name__)
 
 
 class CARTFeatureSelector(AbstractFeatureSelector):
@@ -24,16 +18,18 @@ class CARTFeatureSelector(AbstractFeatureSelector):
     feature_scoring_method: bool = True
 
     def _fit_feature_scoring(
-        self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None,  # noqa: ARG002
+        self, 
+        *, 
+        X: pd.DataFrame, 
+        y: pd.Series, 
+        time_limit: int | None = None,  # noqa: ARG002
     ) -> dict[str, float]:
-        data_encoder = OrdinalEncoder()
-        X = pd.DataFrame(data_encoder.fit_transform(X), columns=X.columns, index=X.index)
-        label_encoder = LabelEncoder()
-        y = label_encoder.fit_transform(y)
-        numeric_imputer = SimpleImputer(strategy="mean")
-        X_imputed = pd.DataFrame(numeric_imputer.fit_transform(X), columns=X.columns, index=X.index)
+        X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
 
-        CART = DecisionTreeClassifier(random_state=0)
-        CART.fit(X_imputed, y)
-        importances = CART.feature_importances_
-        return dict(zip(X.columns, importances))
+        if self.problem_type == "regression":
+            cart = DecisionTreeRegressor(random_state=self.random_state)
+        else:
+            cart = DecisionTreeClassifier(random_state=self.random_state)
+        cart.fit(X_pre, y)
+        importances = cart.feature_importances_
+        return dict(zip(X_pre.columns, importances))

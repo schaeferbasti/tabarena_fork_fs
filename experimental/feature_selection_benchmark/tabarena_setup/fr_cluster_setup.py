@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 
 from experimental.feature_selection_benchmark.data_integration.fs_data_constants import (
     BENCHMARK_TASK_COLLECTION_NAME,
-    DATA_FOUNDRY_CACHE,
+    OPENML_CACHE,
 )
 from tabflow_slurm.benchmarking_setup.data_foundry_integration.data_foundry_task_creator import (
     get_metadata_for_benchmark_suite,
@@ -17,7 +17,7 @@ from tabflow_slurm.benchmarking_setup.data_foundry_integration.data_foundry_task
 from tabflow_slurm.setup_slurm_base_v2 import BenchmarkSetup2026, PathSetup, SlurmSetup
 
 ALL_TASK_METADATA = get_metadata_for_benchmark_suite(
-    BENCHMARK_TASK_COLLECTION_NAME, data_foundry_cache=DATA_FOUNDRY_CACHE
+    BENCHMARK_TASK_COLLECTION_NAME, openml_cache=OPENML_CACHE
 )
 FS_TIME_LIMIT = 3600
 
@@ -30,11 +30,26 @@ class UniPathSetup(PathSetup):
     tabarena_repo_name: str = "fsbench"
     venv_name: str = "fs_bench_env"
 
+@dataclass
+class UniPathSetupDominika(PathSetup):
+    """Path setup for Dominika's environment."""
+
+    base_path: str = "/work/dlclarge1/purucker-fs_benchmark/"
+    tabarena_repo_name: str = "fsbench_matusd"
+    venv_name: str = "fsbenchvenv2"
+
+@dataclass
+class UniPathSetupBastian(PathSetup):
+    """Path setup for Basti's environment."""
+
+    base_path: str = "/work/dlclarge1/purucker-fs_benchmark/"
+    tabarena_repo_name: str = "fsbench_schaefeb"
+    venv_name: str = "venv_fs_bench_schaefeb"
 
 @dataclass
 class UniSlurmSetup(SlurmSetup):
     """We can use mostly the defaults."""
-
+    
 
 @dataclass
 class TabArenaBenchmarkSetup(BenchmarkSetup2026):
