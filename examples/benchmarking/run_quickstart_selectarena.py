@@ -11,39 +11,20 @@ from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_sele
 from tabarena.benchmark.feature_selection_methods.ag.accuracy.accuracy import AccuracyFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.anova.anova import ANOVAFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.cart.cart import CARTFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.cfs.cfs import CFSFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.chi2.chi2 import Chi2FeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.cmim.cmim import CMIMFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.consistency.consistency import ConsistencyFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.disr.disr import DISRFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.elastic_net.elastic_net import ElasticNetFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.gain_ratio.gain_ratio import GainRatioFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.gini.gini import GiniFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.impurity.impurity import ImpurityFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.information_gain.information_gain import (
-    InformationGainFeatureSelector,
-)
-from tabarena.benchmark.feature_selection_methods.ag.interact.interact import INTERACTFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.jmi.jmi import JMIFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.laplacian_score.laplacian_score import (
     LaplacianScoreFeatureSelector,
 )
 from tabarena.benchmark.feature_selection_methods.ag.lasso.lasso import LassoFeatureSelector
+from tabarena.benchmark.feature_selection_methods.ag.markov_blanket.markov_blanket import MarkovBlanketFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.mi.mi import MIFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.mrmr.mrmr import mRMRFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.one_r.one_r import OneRFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.pearson_correlation.pearson_correlation import (
-    PearsonCorrelationFeatureSelector,
-)
 from tabarena.benchmark.feature_selection_methods.ag.random.random import RandomFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.relief_f.relief_f import ReliefFFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.rf_importance.rf_importance import RFImportanceFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.sbe.sbe import SequentialBackwardEliminationFeatureSelector
 from tabarena.benchmark.feature_selection_methods.ag.sfs.sfs import SequentialForwardSelectionFeatureSelector
-from tabarena.benchmark.feature_selection_methods.ag.symmetrical_uncertainty.symmetrical_uncertainty import (
-    SymmetricalUncertaintyFeatureSelector,
-)
-from tabarena.benchmark.feature_selection_methods.ag.t_test.t_test import tTestFeatureSelector
 
 
 def run_example():
@@ -82,8 +63,9 @@ def run_example():
         SequentialBackwardEliminationFeatureSelector(max_features=max_features, proxy_mode_config=proxy_model_config),
         SequentialForwardSelectionFeatureSelector(max_features=max_features, proxy_mode_config=proxy_model_config),
         RFImportanceFeatureSelector(max_features=max_features),
+        MarkovBlanketFeatureSelector(max_features=max_features),
     ]:
-        print("\n####### Running feature selector:", feature_selector.name)
+        print("\n####### Running feature selector:", feature_selector)
         predictor = TabularPredictor(
             label="class", default_base_path="/tmp/ag_out", eval_metric=eval_metric, problem_type=problem_type,
         ).fit(
