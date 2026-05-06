@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pandas as pd
 from data_foundry.curation_container import CuratedContainer
-from data_foundry.schema import ProblemTypeClassification
 from loguru import logger
 from tabarena.benchmark.task import UserTask
 from tqdm import tqdm
@@ -127,10 +126,41 @@ def convert_data_foundry_task_to_user_task(
     task_container = CuratedContainer.load(path_to_local_task)
 
     # Resolve task type
+    y: pd.Series = task_container.dataset[task_container.task_metadata.target_column_name]
     if task_container.task_metadata.problem_type == "regression":
         problem_type = "regression"
-    elif task_container.task_metadata.problem_type in ProblemTypeClassification:
+        # Assert y is pd.numeric
+        if not pd.api.types.is_numeric_dtype(y):
+            raise ValueError(
+                f"Target column {task_container.task_metadata.target_column_name} is not numeric for "
+                f"regression problem. ({task_container.dataset_metadata.unique_name})"
+            )
+    elif task_container.task_metadata.problem_type == "binary_classification":
         problem_type = "classification"
+        # Assert y is pd.categorical with 2 classes
+        if not isinstance(y.dtype, pd.CategoricalDtype):
+            raise ValueError(
+                f"Target column {task_container.task_metadata.target_column_name} is not categorical "
+                f"for classification problem. ({task_container.dataset_metadata.unique_name})"
+            )
+        if y.nunique() != 2:
+            raise ValueError(
+                f"Target column {task_container.task_metadata.target_column_name} has {y.nunique()} classes, "
+                f"but expected 2 for binary classification problem. ({task_container.dataset_metadata.unique_name})"
+            )
+    elif task_container.task_metadata.problem_type == "multiclass_classification":
+        problem_type = "classification"
+        if not isinstance(y.dtype, pd.CategoricalDtype):
+            raise ValueError(
+                f"Target column {task_container.task_metadata.target_column_name} is not categorical for "
+                f"classification problem. ({task_container.dataset_metadata.unique_name})"
+            )
+        if y.nunique() < 3:
+            raise ValueError(
+                f"Target column {task_container.task_metadata.target_column_name} has {y.nunique()} classes, "
+                f"but expected at least 3 for multiclass classification "
+                f"problem. ({task_container.dataset_metadata.unique_name})"
+            )
     else:
         raise ValueError(f"Unknown problem type {task_container.task_metadata.problem_type}")
 
@@ -141,7 +171,7 @@ def convert_data_foundry_task_to_user_task(
         fallback_metric = allowed_eval_metrics[0]
         if eval_metric not in allowed_eval_metrics:
             logger.info(
-                f"Objective metric {eval_metric} not in allowed for problem type {problem_type}. "
+                f"\nObjective metric {eval_metric} not allowed for problem type {problem_type}. "
                 f"Falling back to {fallback_metric}."
             )
             eval_metric = fallback_metric
@@ -168,6 +198,18 @@ def convert_data_foundry_task_to_user_task(
     user_task.save_local_openml_task(oml_task)
     return user_task
 
+
+def _get_path_to_metadata_cache() -> Path:
+    import openml
+    base_path = openml.config._root_cache_directory
+
+    return base_path / "tabarena_metadata_cache"
+
+def _init_openml_cache(openml_cache: str | Path) -> None:
+    import openml
+
+    print(f"Setting OpenML cache directory to: {openml_cache}")
+    openml.config.set_root_cache_directory(root_cache_directory=str(openml_cache))
 
 def download_data_foundry_datasets(
     *,
@@ -203,10 +245,7 @@ def download_data_foundry_datasets(
         A DataFrame containing metadata about the created TabArena UserTasks.
     """
     if openml_cache is not None:
-        import openml
-
-        print(f"Setting OpenML cache directory to: {openml_cache}")
-        openml.config.set_root_cache_directory(root_cache_directory=openml_cache)
+        _init_openml_cache(openml_cache=openml_cache)
 
     print("Preprocessing data foundry datasets for TabArena...")
     task_metadata = DataFoundryAdapter(
@@ -214,30 +253,36 @@ def download_data_foundry_datasets(
         path_to_data_foundry_cache=data_foundry_cache,
     ).to_tabarena_user_tasks(show_sample=True)
 
-    path_to_metadata = data_foundry_cache / f"{benchmark_suite_name}_tasks_metadata.csv"
+
+    path_to_metadata = _get_path_to_metadata_cache() / f"{benchmark_suite_name}_tasks_metadata.csv"
+    path_to_metadata.parent.mkdir(parents=True, exist_ok=True)
     print(f"Saving metadata to {path_to_metadata}")
     task_metadata.to_csv(path_to_metadata, index=False)
 
 
-def get_metadata_for_benchmark_suite(benchmark_suite_name: str, data_foundry_cache: Path) -> Path:
+def get_metadata_for_benchmark_suite(benchmark_suite_name: str, *, openml_cache: Path | None = None) -> Path:
     """Get the path to the metadata CSV file for a given benchmark suite.
 
     Parameters
     ----------
     benchmark_suite_name : str
         The name of the benchmark suite for which to retrieve the metadata.
-    data_foundry_cache : Path
-        The path to the cache directory from where to load data foundry data.
+    openml_cache: str | None
+        If not None, sets the OpenML cache directory to the specified path for
+        downloading and caching TabArenaOpenML tasks.
 
     Returns:
     -------
     Path
         The path to the metadata CSV file for the specified benchmark suite.
     """
-    path_to_metadata = data_foundry_cache / f"{benchmark_suite_name}_tasks_metadata.csv"
+    if openml_cache is not None:
+        _init_openml_cache(openml_cache=openml_cache)
+
+    path_to_metadata = _get_path_to_metadata_cache() / f"{benchmark_suite_name}_tasks_metadata.csv"
     if not path_to_metadata.exists():
         raise FileNotFoundError(
-            f"Metadata file {path_to_metadata} does not exist. " "Please run download_data_foundry_datasets first."
+            f"Metadata file {path_to_metadata} does not exist. Please run download_data_foundry_datasets first."
         )
     return path_to_metadata
 

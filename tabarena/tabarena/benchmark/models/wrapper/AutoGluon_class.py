@@ -16,6 +16,7 @@ from loguru import logger
 class AGWrapper(AbstractExecModel):
     can_get_error_val = True
     can_get_oof = True
+    can_get_preprocessing = True
 
     def __init__(
         self,
@@ -49,14 +50,11 @@ class AGWrapper(AbstractExecModel):
         init_kwargs = copy.deepcopy(self.init_kwargs)
         fit_kwargs = copy.deepcopy(self.fit_kwargs)
 
-        # TODO: think about if we can reset the index here without breaking simulation artifacts
-        train_data = X.copy()
-
         num_folds = fit_kwargs.pop("num_bag_folds", None)
         num_repeats = fit_kwargs.pop("num_bag_folds", None)
 
         custom_splits, num_folds, num_repeats = self.resolve_validation_splits(
-            X=train_data.reset_index(drop=True),
+            X=X.reset_index(drop=True),
             y=y.reset_index(drop=True),
             num_folds=num_folds,
             num_repeats=num_repeats
@@ -88,12 +86,31 @@ class AGWrapper(AbstractExecModel):
                     feature_generator_kwargs[param] = value
             fit_kwargs["feature_generator"] = feature_generator_cls(**feature_generator_kwargs)
 
+        # TODO: think about if we can reset the index here without breaking simulation artifacts
+        if self._can_use_data_in_place:
+            train_data = X
+            if X_val is not None:
+                tuning_data = X_val
+        else:
+            train_data = X.copy()
+            if X_val is not None:
+                tuning_data = X_val.copy()
+
         train_data[self.label] = y
         if X_val is not None:
-            tuning_data = X_val.copy()
             tuning_data[self.label] = y_val
             fit_kwargs["tuning_data"] = tuning_data
 
+        if self._split_seed not in ("NOTSET", None):
+            try:
+                from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
+            except ImportError:
+                logger.warning("Could not import AbstractFeatureSelector — random_state not updated for feature selectors.")
+            else:
+                fg_kwargs = fit_kwargs.get("_feature_generator_kwargs", {})
+                for generator in fg_kwargs.get("post_generators", []):
+                    if isinstance(generator, AbstractFeatureSelector):
+                        generator._outer_random_state = self._split_seed
         return train_data, init_kwargs, fit_kwargs
 
 
@@ -114,7 +131,6 @@ class AGWrapper(AbstractExecModel):
             X_val=X_val,
             y_val=y_val,
         )
-        del X, y, X_val, y_val # encourage memory release
 
         self.predictor = TabularPredictor(
             label=self.label,
@@ -143,6 +159,40 @@ class AGWrapper(AbstractExecModel):
         simulation_artifact = self.predictor.simulation_artifact()
         simulation_artifact["pred_proba_dict_val"] = simulation_artifact["pred_proba_dict_val"][self.predictor.model_best]
         return simulation_artifact
+
+    def get_preprocessing_results(self) -> dict:
+        """Save the results of preprocessing into output artifacts."""
+        # TODO: make more general in the future.
+        #   Current assumptions: one feature selector per piepline
+        from autogluon.features.generators.auto_ml_pipeline import AutoMLPipelineFeatureGenerator
+        from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
+
+        feature_generators: AutoMLPipelineFeatureGenerator = self.predictor._learner.feature_generator
+
+        results = {}
+        found_fs = False
+        for generator_group in feature_generators.generators:
+            for generator in generator_group:
+
+                # Check for feature selector results
+                if isinstance(generator, AbstractFeatureSelector):
+                    if found_fs:
+                        raise NotImplementedError("Getting Metadata for multiple Feature Selectors not supported!")
+
+                    found_fs = True
+                    results["feature_selection"] = {
+                        "method_type": generator.name,
+                        "feature_scoring_method": generator.feature_scoring_method,
+                        "original_feature_names": generator._original_features,
+                        "selected_feature_names": generator._selected_features,
+                        "feature_scores": generator._feature_scores,
+                        "max_features": generator.max_features,
+                        "max_features_input": generator.max_features_input,
+                        "feature_selection_fit_time": generator._feature_selection_fit_time,
+                        "feature_selection_time_limit": generator._feature_selection_time_limit
+                    }
+
+        return results
 
     def get_metric_error_val(self) -> float:
         # FIXME: this shouldn't be calculating its own val score, that should be external. This should simply give val pred and val pred proba
