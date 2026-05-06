@@ -5,26 +5,23 @@ Usage:
         --mode validity \
         --method_name FSBench__RandomFeatureSelector__5__0__lgbm__3600 \
         --data_foundry_task_id "UserTask|1386903908|anneal/019d3f7b-494a-71fa-8eb2-25d01dfb7792|/work/dlclarge1/purucker-fs_benchmark/.openml/tabarena_tasks" \
-        --repeat 0 \
-        --noise 1.0 \
-        --noise_type gaussian
 
     python feature_selection_benchmark_runner.py \
         --mode stability \
         --method_name FSBench__RandomFeatureSelector__5__0__lgbm__3600 \
         --data_foundry_task_id "UserTask|1386903908|anneal/019d3f7b-494a-71fa-8eb2-25d01dfb7792|/work/dlclarge1/purucker-fs_benchmark/.openml/tabarena_tasks" \
-        --repeat 0 \
-        --noise 1.0 \
-        --noise_type gaussian
 """
 from __future__ import annotations
 
 import argparse
 import time
-from dataclasses import dataclass
+import os    ### NEW: Needed for checking file size
+import ast   ### NEW: Needed for parsing the dictionary string in mode_kwargs
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import re
 import numpy as np
 import pandas as pd
 from tabarena.benchmark.feature_selection_methods.feature_selection_benchmark_utils import (
@@ -65,11 +62,13 @@ def get_cache_path(job: ExtraBenchmarkJob) -> Path:
     cache_dir = Path(__file__).parent / "results"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    task_name = job.data_foundry_task_id.split("|")[3].split("/")[0]
+    task_name = job.data_foundry_task_id
+    task_name = re.sub(r'[|: /\[\]\(\)]', '_', task_name)
+    task_name = re.sub(r'_+', '_', task_name)
     safe_method = job.method_name.replace("/", "_").replace(" ", "_")
     safe_mode = job.mode.replace("/", "_").replace(" ", "_")
 
-    return cache_dir / f"{safe_mode}_{safe_method}_{task_name}_{job.repeat}.csv"
+    return cache_dir / f"{safe_mode}_{safe_method}_{task_name}.csv"
 
 
 def _augment_dataset(
@@ -136,22 +135,81 @@ def run_benchmark(job: ExtraBenchmarkJob) -> FeatureSelectionResult:
     )
 
 
-def save_result(job: ExtraBenchmarkJob, result: FeatureSelectionResult) -> Path:
+def save_results(job: ExtraBenchmarkJob, results: list[FeatureSelectionResult]) -> Path:
     cache_path = get_cache_path(job)
-    pd.DataFrame([result.__dict__]).to_csv(cache_path, index=False)
+    df_new = pd.DataFrame([r.__dict__ for r in results])
+
+    if not cache_path.exists() or os.path.getsize(cache_path) == 0:
+        df_new.to_csv(cache_path, index=False, mode='w', header=True)
+    else:
+        df_new.to_csv(cache_path, index=False, mode='a', header=False)
+
     return cache_path
 
 
-def run_extra_benchmark_job(job: ExtraBenchmarkJob) -> Path | None:
-    cache_path = get_cache_path(job)
+def run_extra_benchmark_job(base_job: ExtraBenchmarkJob) -> Path | None:
+    cache_path = get_cache_path(base_job)
 
-    if cache_path.exists() and not job.ignore_cache:
-        print(f"Cache exists at {cache_path}. Skipping.")
-        return None
+    ### NEW: Analyze the existing cache file to see what has already been computed
+    existing_repeats = set()
+    existing_noises = set()
 
-    result = run_benchmark(job)
-    save_result(job, result)
-    print(result)
+    if cache_path.exists() and not base_job.ignore_cache:
+        if os.path.getsize(cache_path) > 0:
+            try:
+                df_existing = pd.read_csv(cache_path)
+                if base_job.mode == "stability" and "repeat" in df_existing.columns:
+                    existing_repeats = set(df_existing["repeat"].dropna().unique())
+                elif base_job.mode == "validity" and "mode_kwargs" in df_existing.columns:
+                    # Safely parse the mode_kwargs string to extract already computed noise values
+                    for val in df_existing["mode_kwargs"].dropna():
+                        try:
+                            d = ast.literal_eval(val)
+                            if "noise" in d:
+                                existing_noises.add(d["noise"])
+                        except:
+                            pass
+            except Exception as e:
+                print(f"Warning: Could not parse existing cache {cache_path}: {e}")
+
+    all_results = []
+
+    if base_job.mode == "stability":
+        ### CHANGED: Defines the total runs (30) and filters out what is already done
+        target_repeats = set(range(30))
+        missing_repeats = sorted(list(target_repeats - existing_repeats))
+
+        if not missing_repeats:
+            print(f"All 30 stability repeats already exist in {cache_path}. Skipping.")
+            return None
+
+        print(f"Running stability benchmark (executing {len(missing_repeats)} missing repetitions)...")
+        for rep in missing_repeats:
+            current_job = replace(base_job, repeat=rep)
+            print(f"  -> Executing repeat {rep}...")
+            result = run_benchmark(current_job)
+            all_results.append(result)
+
+    elif base_job.mode == "validity":
+        ### CHANGED: Defines total noises and filters out what is already done
+        target_noises = {0.5, 0.75, 1.0}
+        missing_noises = sorted(list(target_noises - existing_noises))
+
+        if not missing_noises:
+            print(f"All validity noises already exist in {cache_path}. Skipping.")
+            return None
+
+        print(f"Running validity benchmark for missing noises {missing_noises}...")
+        for noise_val in missing_noises:
+            current_job = replace(base_job, noise=noise_val)
+            print(f"  -> Executing with noise {noise_val}...")
+            result = run_benchmark(current_job)
+            all_results.append(result)
+
+    if all_results:
+        save_results(base_job, all_results)
+        print(f"Successfully appended {len(all_results)} results to {cache_path}")
+
     return cache_path
 
 
@@ -166,7 +224,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--repeat", type=int, default=0)
     parser.add_argument("--noise", type=float, default=1.0)
-    parser.add_argument("--noise_type", type=str, choices=["gaussian", "uniform"], default="gaussian")
+    parser.add_argument("--noise_type", type=str, default="gaussian")
     parser.add_argument("--ignore_cache", action="store_true")
     return parser.parse_args()
 
