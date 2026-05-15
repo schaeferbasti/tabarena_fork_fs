@@ -172,15 +172,18 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         else:
             self._selected_features = self._fit_feature_selection(**feature_fit_kwargs)
             assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
-            if len(self._selected_features) < self.max_features:
+            if len(self._selected_features) != self.max_features:
                 self._log(30,
-                    f"Warning: Not enough features selected to reach {self.max_features}. "
-                    f"Selected {len(self._selected_features)} features from the method, "
-                    f"and randomly selected the rest."
+                    f"Warning: Selected {len(self._selected_features)} features with a budget of {self.max_features}. "
+                    f"Fallback to random selection."
                 )
-                self._selected_features += self.fallback_feature_selection(
+                self._selected_features = self.fallback_feature_selection(
                     selected_features=self._selected_features
                 )
+        assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+        assert len(self._selected_features) == self.max_features, (
+            f"Expected {self.max_features} selected features, got {len(self._selected_features)}."
+        )
         self._feature_selection_fit_time = time.monotonic() - start_time
 
         # Transform (aka select features)
@@ -267,15 +270,15 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         """
         if selected_features is None:
             selected_features = []
-            to_select_from_features = self._original_features[:]
-        else:
-            to_select_from_features = [
-                feature for feature in self._original_features if feature not in selected_features
-            ]
-        num_feature_to_select = self.max_features - len(selected_features)
 
-        features = list(self._rng.choice(to_select_from_features, size=num_feature_to_select, replace=False))
-        return [str(feature) for feature in features]
+        if len(selected_features) >= self.max_features: # backward search
+            return [str(f) for f in self._rng.choice(selected_features, size=self.max_features, replace=False)]
+        
+        # forward search
+        to_select_from_features = [feature for feature in self._original_features if feature not in selected_features]
+        num_feature_to_select = self.max_features - len(selected_features)
+        rand_features = [str(f) for f in self._rng.choice(to_select_from_features, size=num_feature_to_select, replace=False)]
+        return selected_features + rand_features
 
     def selected_features_from_feature_scores(self) -> list[str]:
         """Convert feature scores to selected features."""
@@ -296,7 +299,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
                 f"and randomly selected the rest.",
             )
 
-            selected_features = selected_features + self.fallback_feature_selection(selected_features=selected_features)
+            selected_features = self.fallback_feature_selection(selected_features=selected_features)
 
         return selected_features
 
@@ -415,6 +418,19 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             return True
         return False
    
+    def _timed_out(self, time_limit, start_time) -> bool:
+        if time_limit is None:
+            return False
+        elapsed = time.monotonic() - start_time
+        if elapsed >= time_limit:
+            self._log(30, 
+                f"Warning: FeatureSelection Method has no time left to train... "
+                f"\t(Time Elapsed = {elapsed:.1f}s, Time Limit = {time_limit:.1f}s)"
+            )
+            return True
+        return False
+   
+
     @staticmethod
     def _impute(
         X: pd.DataFrame, 
