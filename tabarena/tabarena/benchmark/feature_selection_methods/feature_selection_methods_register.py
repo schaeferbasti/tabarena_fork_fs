@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     )
 
 NAME_TO_MODULE_MAP = {
-    "AccuracyFeatureSelector": "accuracy.accuracy",
+    "LOCOFeatureSelector": "loco.loco",
     "RandomFeatureSelector": "random.random",
-    "ANOVAFeatureSelector": "anova.anova",
+    "FTestFeatureSelector": "f_test.f_test",
     "CARTFeatureSelector": "cart.cart",
     "ElasticNetFeatureSelector": "elastic_net.elastic_net",
     "GainRatioFeatureSelector": "gain_ratio.gain_ratio",
@@ -27,7 +27,7 @@ NAME_TO_MODULE_MAP = {
 }
 FEATURE_SELECTION_METHODS = list(NAME_TO_MODULE_MAP.keys())
 FEATURE_SELECTION_METHODS_WITH_PROXY_MODEL = [
-    "AccuracyFeatureSelector",
+    "LOCOFeatureSelector",
     "SequentialBackwardEliminationFeatureSelector",
     "SequentialForwardSelectionFeatureSelector",
 ]

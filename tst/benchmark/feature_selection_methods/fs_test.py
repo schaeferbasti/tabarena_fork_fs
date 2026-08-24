@@ -100,4 +100,7 @@ def test_feature_selector_dataset_combo(problem_type, evaluation_metric, method_
 
     assert feature_selector._selected_features is not None
     assert len(feature_selector._selected_features) <= max_features
-    assert all(f in train_data.columns for f in feature_selector._selected_features)
+    # Each selection entry is a {"feature": name, "value": ...} dict.
+    assert all(set(entry) == {"feature", "value"} for entry in feature_selector._selected_features)
+    selected_names = [entry["feature"] for entry in feature_selector._selected_features]
+    assert all(f in train_data.columns for f in selected_names)

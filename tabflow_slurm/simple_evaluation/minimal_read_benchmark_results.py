@@ -25,21 +25,24 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             assert "default" in result.framework
             fe_total_budget, fe_budget_index = None, None
             feature_selection_method, feature_selection_is_scoring_method = None, None
-            original_feature_names, selected_feature_names, feature_scores = None, None, None
+            original_feature_names, feature_scores = None, None
+            selected_features = None
             max_features = None
             feature_selection_fit_time, feature_selection_time_limit = None, None
+            random_feature_names = None
         else:
             fe_total_budget = preprocessing_results["max_features_input"].keywords["b"]
             fe_budget_index = preprocessing_results["max_features_input"].keywords["idx"]
             feature_selection_method = preprocessing_results["method_type"]
             feature_selection_is_scoring_method = preprocessing_results["feature_scoring_method"]
             original_feature_names = preprocessing_results["original_feature_names"]
-            selected_feature_names = preprocessing_results["selected_feature_names"]
+            # selected_feature_names = preprocessing_results["selected_feature_names"]
+            selected_features = preprocessing_results.get("selected_features")  # [{feature, value}, ...] incl. scores
             feature_scores = preprocessing_results["feature_scores"]
             max_features = preprocessing_results["max_features"]
             feature_selection_fit_time = preprocessing_results["feature_selection_fit_time"]
             feature_selection_time_limit =  preprocessing_results["feature_selection_time_limit"]
-
+            random_feature_names = preprocessing_results.get("random_feature_names")
         record = {
             "experiment_method_name_string": result.framework,
             # Model details
@@ -57,13 +60,15 @@ def _parse_pickle_batch(file_paths: list[str]) -> list[dict]:
             "feature_selection_method": feature_selection_method,
             "feature_selection_is_scoring_method": feature_selection_is_scoring_method,
             # "original_feature_names": original_feature_names,
-            "selected_feature_names": selected_feature_names,
+            # "selected_feature_names": selected_feature_names,
+            "selected_features": selected_features,  # names + per-feature scores/values
+            "random_feature_names": random_feature_names,
             # "feature_scores": feature_scores,
             "max_features": max_features,
             "feature_selection_budget_total": fe_total_budget,
             "feature_selection_budget_index": fe_budget_index,
             "feature_selection_fit_time": feature_selection_fit_time,
-            "feature_selection_time_limit": feature_selection_time_limit,
+            "feature_selection_time_limit": feature_selection_time_limit
         }
         records.append(record)
 
@@ -79,6 +84,7 @@ def read_benchmark_results(
     data_path: str | Path,
     *,
     benchmark_name: str | None = None,
+    output_file: str | None = None,
     output_dir: str | Path = _SCRIPT_DIR,
     num_cpus: int = 8,
     batch_size: int = 1000,
@@ -119,7 +125,7 @@ def read_benchmark_results(
 
     if benchmark_name is None:
         raise ValueError("benchmark_name must be provided to determine the output file name.")
-    output_path = Path(output_dir) / benchmark_name / "results_per_split.csv"
+    output_path = Path(output_dir) / benchmark_name / output_file
     data_path = Path(data_path)
     data_path = data_path / benchmark_name / "data"
 
@@ -187,6 +193,7 @@ def main(
     batch_size: int | None = None,
     no_ray: bool = False,
     only_default: bool = True,
+    output_file: str | None = None,
 ) -> pd.DataFrame:
     """Entry point that works both as a direct call and as a CLI script.
 
@@ -243,7 +250,7 @@ def main(
         parser.add_argument(
             "--only_default",
             action=argparse.BooleanOptionalAction,
-            default=True,
+            default=False,
             help="If set (default), only include subfolders containing '_c1_' "
             "(default-config experiments). Use --no-only_default to include random "
             "configurations such as _r1_, _r2_, etc.",
@@ -278,14 +285,16 @@ def main(
         batch_size=batch_size if batch_size is not None else 1000,
         no_ray=no_ray,
         only_default=only_default,
+        output_file=output_file
     )
 
 
 if __name__ == "__main__":
     main(
         data_path="/work/dlclarge1/purucker-fs_benchmark/output",
-        benchmark_name="feature_selection_benchmark_2026_all",
-        output_dir="./evals",
+        benchmark_name="feature_selection_benchmark_2026_rebuttal",
+        output_dir="/work/dlclarge1/purucker-fs_benchmark/evals",
+        output_file="results_test_2707.csv",
         # no_ray=True,
         # only_default=False,  # uncomment to also include random configs (_r1_, _r2_, ...)
     )

@@ -22,8 +22,12 @@ from fr_cluster_setup import ALL_TASK_METADATA, FSBenchmarkConfig, TabArenaBench
 
 preprocessing_pipelines = FSBenchmarkConfig().get_default_preprocessing_configs(
     fs_methods=[
-        "AccuracyFeatureSelector",
-        "RandomFeatureSelector",
+        # "LOCOFeatureSelector",
+        
+        # "RandomFeatureSelector",
+    
+        "FTestFeatureSelector", 
+
         "CARTFeatureSelector", 
 
         "ANOVAFeatureSelector",

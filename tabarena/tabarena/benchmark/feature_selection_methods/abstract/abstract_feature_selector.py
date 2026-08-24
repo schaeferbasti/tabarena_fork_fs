@@ -60,10 +60,18 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     _original_features: list[str]
     """The list of original features before fitting the feature selector."""
 
-    _selected_features: list[str] | None
-    """The list of selected features after fitting the feature selector.
-    None, if the feature selector is not fitted yet.
+    _selected_features: list[dict[str, float | None]] | None
+    """The finally-selected features, as an ordered list of dicts (selection order, strongest
+    first). Each entry is {"feature": <name>, "value": <criterion value>}, where "value" follows
+    a three-state convention:
+        - float : the feature's value under the method's own criterion (the score for scoring
+                  methods, the merit/CMI/relevance gain for greedy subset methods, ...).
+        - NaN   : the feature was selected by the method, but the method exposes no per-feature
+                  scalar (e.g. backward elimination: SBE, Consistency, MarkovBlanket).
+        - None  : the feature was added by the random fallback (pure padding, no criterion).
+    None (the attribute itself) if the selector is not fitted yet.
     """
+
     _feature_scores: dict[str, float] | None
     """Mapping from feature name to score (higher is more important).
     None if the feature selector is not fitted yet, or if the method does not compute feature scores.
@@ -76,6 +84,11 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
 
     _feature_selection_time_limit: int | None
     """Time limit for the feature selection method."""
+
+    _feature_selection_random_features: list[str]
+    """Names of the features in the final selection that were chosen at random by the
+    fallback (forward search: the randomly added fills; backward search: the randomly
+    kept subset). Empty if the fallback was never triggered."""
 
     _rng: np.random.Generator
     """Random number generator for fallback feature selection."""
@@ -92,6 +105,8 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         *,
         proxy_mode_config: ProxyModelConfig | None = None,
         raise_on_useless_feature_selection: bool = True,
+        skip_random_fallback: bool = False,
+        encoding_permutation_seed: int | None = None,
         **kwargs,
     ):
         """Init from super class with additional feature selection specific parameters.
@@ -109,6 +124,13 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             Configuration of the proxy model to use inside the feature selection method.
         raise_on_useless_feature_selection:
             If True, the method raises an error when the input data contains less than max_features.
+        encoding_permutation_seed:
+            Ordinal-encoding ablation. If None (default), categorical columns are ordinal-encoded
+            in the usual sorted category order. If set to an int, the category -> integer mapping
+            of every ordinal-encoded column is randomly permuted with a dedicated RNG seeded by this
+            value. This RNG is independent of ``self.random_state`` (which seeds the random fallback
+            and internal train/val splits), so variance across seeds isolates the effect of the
+            arbitrary ordinal assignment. See ``_encode_ordinal``.
 
         """
         super().__init__(**kwargs)
@@ -122,6 +144,9 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         self._outer_random_state = None
         self._feature_selection_fit_time = None
         self._feature_selection_time_limit = None
+        self._feature_selection_random_features = []
+        self.skip_random_fallback = skip_random_fallback
+        self.encoding_permutation_seed = encoding_permutation_seed
 
     def _fit_transform(
         self,
@@ -171,7 +196,7 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
             self._selected_features = self.selected_features_from_feature_scores()
         else:
             self._selected_features = self._fit_feature_selection(**feature_fit_kwargs)
-            assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
+            assert isinstance(self._selected_features, list), "The selected features must be a list of {feature, value} dicts."
             if len(self._selected_features) != self.max_features:
                 self._log(30,
                     f"Warning: Selected {len(self._selected_features)} features with a budget of {self.max_features}. "
@@ -180,19 +205,24 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
                 self._selected_features = self.fallback_feature_selection(
                     selected_features=self._selected_features
                 )
-        assert isinstance(self._selected_features, list), "The selected features must be a list of feature names."
-        assert len(self._selected_features) == self.max_features, (
-            f"Expected {self.max_features} selected features, got {len(self._selected_features)}."
-        )
+        assert isinstance(self._selected_features, list), "The selected features must be a list of {feature, value} dicts."
+        if self.skip_random_fallback:
+            assert len(self._selected_features) >= 1
+        else:
+            assert len(self._selected_features) == self.max_features, (
+                f"Expected {self.max_features} selected features, got {len(self._selected_features)}."
+            )
+ 
         self._feature_selection_fit_time = time.monotonic() - start_time
 
         # Transform (aka select features)
+        selected_names = [entry["feature"] for entry in self._selected_features]
         X_out = self._transform(X=X)
-        assert list(X_out) == self._selected_features, "The output features must be the same as the selected features."
+        assert list(X_out) == selected_names, "The output features must be the same as the selected features."
 
         # Update the type family groups in the output feature metadata.
         type_family_groups_special: dict[str, list[str]] = {
-            type_group_name: [f for f in feature_names if f in self._selected_features]
+            type_group_name: [f for f in feature_names if f in selected_names]
             for type_group_name, feature_names in old_type_family_groups_special.items()
         }
 
@@ -223,8 +253,17 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         else:
             self.max_features = self.max_features_input
 
-    def _fit_feature_selection(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> list[str]:
-        """Code that fills self._selected_features. Used if feature_scoring_method is False."""
+    def _fit_feature_selection(
+        self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None
+    ) -> list[dict[str, float | None]]:
+        """Code that fills self._selected_features. Used if feature_scoring_method is False.
+
+        Must return an ordered list (selection order, strongest first) of
+        {"feature": <name>, "value": <criterion value>} dicts. "value" is a float with the
+        feature's value under the method's own criterion, or NaN (``float("nan")``) when the
+        method selects the feature but exposes no per-feature scalar. Do not use None here;
+        None is reserved for random-fallback fills added by the abstract layer.
+        """
         raise NotImplementedError
 
     def _fit_feature_scoring(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> dict[str, float]:
@@ -236,12 +275,14 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         if self._selected_features is None:
             raise ValueError("Feature selector has not been fitted yet. Please call fit_transform first.")
 
+        selected_names = [entry["feature"] for entry in self._selected_features]
+
         # Check if all of selected features is in X
-        missing_features = [feature for feature in self._selected_features if feature not in X.columns]
+        missing_features = [feature for feature in selected_names if feature not in X.columns]
         if missing_features:
             raise ValueError(f"Some of the selected features are not in the input data: {missing_features}")
 
-        return X[self._selected_features]
+        return X[selected_names]
 
     @staticmethod
     def get_default_infer_features_in_args() -> dict:
@@ -259,49 +300,69 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     #   Thus, the randomly selected features are likely always the same across different runs,
     #   which is not ideal for a fallback method. So likely, we want to somehow adjust the random state
     #   based on some property of the input data, or pass a different random state per run.
-    def fallback_feature_selection(self, *, selected_features: list[str] | None = None) -> list[str]:
+    def fallback_feature_selection(
+        self, *, selected_features: list[dict[str, float | None]] | None = None
+    ) -> list[dict[str, float | None]]:
         """Randomly select features as a fallback with support for partial fallback.
 
         Parameters
         ----------
-        selected_features: list[str] | None
-            The list of already selected features that should be included in the output. If None, no
-            features are guaranteed to be included in the output.
+        selected_features: list[dict] | None
+            The already-selected features (as {"feature", "value"} dicts) that should be included
+            in the output. If None, no features are guaranteed to be included in the output.
+
+        Returns
+        -------
+        list[dict]
+            The selection as {"feature", "value"} dicts. Randomly chosen top-ups carry a
+            "value" of None. ``_feature_selection_random_features`` is set to their names.
         """
+        if self.skip_random_fallback and selected_features:
+            return selected_features
         if selected_features is None:
             selected_features = []
+        selected_names = [entry["feature"] for entry in selected_features]
 
         if len(selected_features) >= self.max_features: # backward search
-            return [str(f) for f in self._rng.choice(selected_features, size=self.max_features, replace=False)]
-        
+            kept = [str(f) for f in self._rng.choice(selected_names, size=self.max_features, replace=False)]
+            self._feature_selection_random_features = kept
+            return [{"feature": f, "value": None} for f in kept]
+
         # forward search
-        to_select_from_features = [feature for feature in self._original_features if feature not in selected_features]
+        to_select_from_features = [feature for feature in self._original_features if feature not in selected_names]
         num_feature_to_select = self.max_features - len(selected_features)
         rand_features = [str(f) for f in self._rng.choice(to_select_from_features, size=num_feature_to_select, replace=False)]
-        return selected_features + rand_features
+        self._feature_selection_random_features = rand_features
+        return selected_features + [{"feature": f, "value": None} for f in rand_features]
 
-    def selected_features_from_feature_scores(self) -> list[str]:
-        """Convert feature scores to selected features."""
+    def selected_features_from_feature_scores(self) -> list[dict[str, float | None]]:
+        """Convert feature scores to the selected-feature structure.
+
+        Returns an ordered list of {"feature": name, "value": score} dicts (highest score first).
+        If not enough features have scores to fill the budget, the remainder is filled by the
+        random fallback; those top-up features carry a "value" of None.
+        """
         feature_scores = self._feature_scores
         if feature_scores is None:
             raise ValueError("Feature scores are not computed yet. Please call _fit_feature_scoring first.")
 
         # Sort features by score (higher is better) and select the top max_features
         sorted_features = sorted(feature_scores, key=feature_scores.get, reverse=True)
-        selected_features = sorted_features[: self.max_features]
+        selected_names = sorted_features[: self.max_features]
+        selection = [{"feature": f, "value": float(feature_scores[f])} for f in selected_names]
 
         # Fallback for missing feature scores
-        if len(selected_features) < self.max_features:
+        if len(selection) < self.max_features:
             self._log(
                 30,
                 f"Warning: Not enough feature scores computed to select {self.max_features} features. "
-                f"Selected {len(selected_features)} features based on available scores, "
+                f"Selected {len(selection)} features based on available scores, "
                 f"and randomly selected the rest.",
             )
 
-            selected_features = self.fallback_feature_selection(selected_features=selected_features)
+            selection = self.fallback_feature_selection(selected_features=selection)
 
-        return selected_features
+        return selection
 
     # TODO: make this a standalone static method re-usable across TabArena/AutoGluon
     #   - Similar to code in autogluon.core.utils.feature_selection.FeatureSelector
@@ -406,31 +467,25 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         # Ensure Python dtype
         return float(score)
     
-    def _timed_out(self, time_limit, start_time) -> bool:
-        if time_limit is None:
-            return False
-        elapsed = time.monotonic() - start_time
-        if elapsed >= time_limit:
-            self._log(30, 
-                f"Warning: FeatureSelection Method has no time left to train... "
-                f"\t(Time Elapsed = {elapsed:.1f}s, Time Limit = {time_limit:.1f}s)"
-            )
-            return True
-        return False
-   
-    def _timed_out(self, time_limit, start_time) -> bool:
-        if time_limit is None:
-            return False
-        elapsed = time.monotonic() - start_time
-        if elapsed >= time_limit:
-            self._log(30, 
-                f"Warning: FeatureSelection Method has no time left to train... "
-                f"\t(Time Elapsed = {elapsed:.1f}s, Time Limit = {time_limit:.1f}s)"
-            )
-            return True
-        return False
-   
+    def _seeded_feature_order(self) -> list[str]:
+        """Original features in a per-split-seeded random order (``self._rng`` is seeded from the
+        split index). For methods that iterate and may truncate on a time limit, so a timeout
+        leaves a random scored subset instead of always the first columns."""
+        idx = self._rng.permutation(len(self._original_features))
+        return [self._original_features[i] for i in idx]
 
+    def _timed_out(self, time_limit, start_time) -> bool:
+        if time_limit is None:
+            return False
+        elapsed = time.monotonic() - start_time
+        if elapsed >= time_limit:
+            self._log(30, 
+                f"Warning: FeatureSelection Method has no time left to train... "
+                f"\t(Time Elapsed = {elapsed:.1f}s, Time Limit = {time_limit:.1f}s)"
+            )
+            return True
+        return False
+   
     @staticmethod
     def _impute(
         X: pd.DataFrame, 
@@ -486,18 +541,41 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
     
     @staticmethod
     def _encode_ordinal(
-        X: pd.DataFrame, 
+        X: pd.DataFrame,
         handle_unknown: str = "use_encoded_value",
         unknown_value: int = -1,
+        permutation_seed: int | None = None,
     ) -> pd.DataFrame:
+        """Ordinal-encode object/category columns.
+
+        With ``permutation_seed=None`` (default) each column's categories are encoded in the
+        usual sorted order. With an int ``permutation_seed`` the (arbitrary) category -> integer
+        mapping of every categorical column is randomly permuted. The permutation is driven by a
+        dedicated ``np.random.default_rng(permutation_seed)`` so it does not touch the selector's
+        ``self.random_state`` (fallback / internal splits): this is the ordinal-encoding ablation
+        knob, and variance across seeds measures sensitivity to the arbitrary ordinal assignment.
+        """
         from sklearn.preprocessing import OrdinalEncoder
 
         X_enc = X.copy()
         cat_cols = X.select_dtypes(include=["object", "category"]).columns
         if len(cat_cols):
-            X_enc[cat_cols] = OrdinalEncoder(
-                handle_unknown=handle_unknown, unknown_value=unknown_value
-            ).fit_transform(X[cat_cols])
+            if permutation_seed is None:
+                encoder = OrdinalEncoder(
+                    handle_unknown=handle_unknown, unknown_value=unknown_value
+                )
+            else:
+                # Discover the per-column categories exactly as the default encoder would (sorted),
+                # then shuffle each column's order; that shuffled order defines the integer codes.
+                base_categories = OrdinalEncoder().fit(X[cat_cols]).categories_
+                rng = np.random.default_rng(permutation_seed)
+                permuted_categories = [rng.permutation(cats) for cats in base_categories]
+                encoder = OrdinalEncoder(
+                    categories=permuted_categories,
+                    handle_unknown=handle_unknown,
+                    unknown_value=unknown_value,
+                )
+            X_enc[cat_cols] = encoder.fit_transform(X[cat_cols])
         return X_enc
 
     @staticmethod
@@ -534,7 +612,10 @@ class AbstractFeatureSelector(AbstractFeatureGenerator):
         if discretize:
             X = self._discretize(X, **(discretize_kwargs or {}))
         if encode_ordinal:
-            X = self._encode_ordinal(X, **(encode_ordinal_kwargs or {}))
+            # Default the permutation seed to the selector-level ablation knob; an explicit
+            # permutation_seed in encode_ordinal_kwargs still wins if a caller sets one.
+            eo_kwargs = {"permutation_seed": self.encoding_permutation_seed, **(encode_ordinal_kwargs or {})}
+            X = self._encode_ordinal(X, **eo_kwargs)
         if encode_target:
             if y is None:
                 raise ValueError("encode_target=True requires y to be provided.")
@@ -561,7 +642,7 @@ class AbstractITFeatureSelector(AbstractFeatureSelector):
             mi_nat_log = mutual_info_regression(
                 x.values.reshape(-1, 1),
                 y.values,
-                discrete_features=True, # all features discretized
+                discrete_features=True, 
                 random_state=self.random_state,
             )[0]
             return mi_nat_log / np.log(base)

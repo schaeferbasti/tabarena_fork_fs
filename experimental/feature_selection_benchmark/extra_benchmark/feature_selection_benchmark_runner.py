@@ -127,7 +127,10 @@ def run_benchmark(job: ExtraBenchmarkJob) -> FeatureSelectionResult:
         repeat=job.repeat,
         original_features=original_features,
         max_features=feature_selector.max_features,
-        selected_features=feature_selector._selected_features,
+        selected_features=(
+            [entry["feature"] for entry in feature_selector._selected_features]
+            if feature_selector._selected_features is not None else None
+        ),
         num_classes=int(y.nunique()),
         num_samples=int(X.shape[0]),
         min_samples_per_class=y.value_counts().min(),

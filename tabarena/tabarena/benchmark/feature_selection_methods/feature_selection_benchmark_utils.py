@@ -125,6 +125,46 @@ def get_fs_benchmark_preprocessing_pipelines(
     return pipelines
 
 
+def with_encoding_permutation_variants(
+    pipelines: list[str],
+    *,
+    permutation_seeds: list[int],
+    include_baseline: bool = True,
+) -> list[str]:
+    """Expand FSBench pipelines into ordinal-encoding-permutation ablation variants.
+
+    For every FSBench pipeline string, appends one ``__permenc<seed>`` variant per seed in
+    ``permutation_seeds``. The unpermuted baseline (default sorted ordinal encoding) is kept when
+    ``include_baseline`` is True. Non-FSBench entries (e.g. ``"default"``) pass through unchanged.
+
+    The ``__permenc<seed>`` token is appended after any existing ablation token (such as
+    ``__nofallback``), keeping each variant a distinct run identity / output path.
+
+    Parameters
+    ----------
+    pipelines : list[str]
+        Pipeline config strings, optionally already carrying an ablation token.
+    permutation_seeds : list[int]
+        Seeds for the category -> integer permutation; each yields one variant per pipeline.
+    include_baseline : bool
+        Keep the original (unpermuted) pipeline alongside the permuted variants.
+
+    Returns:
+    -------
+    list[str]
+        Expanded list of pipeline config strings.
+    """
+    out: list[str] = []
+    for pipeline in pipelines:
+        if not FSBenchConfig.is_fs_bench_string(pipeline):
+            out.append(pipeline)
+            continue
+        if include_baseline:
+            out.append(pipeline)
+        out.extend(f"{pipeline}__permenc{seed}" for seed in permutation_seeds)
+    return out
+
+
 def selector_and_config_from_string(*, preprocessing_name: str):
     """Parse a preprocessing pipeline config string and return the corresponding feature selector instance and config."""
     from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import (
@@ -135,7 +175,23 @@ def selector_and_config_from_string(*, preprocessing_name: str):
         get_feature_selector_from_name,
     )
 
-    config = FSBenchConfig.from_string(preprocessing_name)
+    # Ablation tokens are appended after the standard 6-field FSBench string and stripped before
+    # parsing, so FSBenchConfig still sees the standard string while the full name (with tokens)
+    # stays the run identity for the cache path and the result "method" field:
+    #   "__nofallback"    -> disable the random fallback (skip_random_fallback)
+    #   "__permenc<seed>" -> permute the ordinal category->integer mapping with the given seed
+    # Both may be present together (e.g. "...__nofallback__permenc2").
+    parse_name = preprocessing_name
+    skip_random_fallback = "__nofallback" in parse_name
+    parse_name = parse_name.replace("__nofallback", "")
+
+    encoding_permutation_seed: int | None = None
+    permenc_match = re.search(r"__permenc(\d+)", parse_name)
+    if permenc_match:
+        encoding_permutation_seed = int(permenc_match.group(1))
+        parse_name = parse_name[: permenc_match.start()] + parse_name[permenc_match.end() :]
+
+    config = FSBenchConfig.from_string(parse_name)
     print(
         f"Using preprocessing pipeline: {config.to_string()}\n"
         f"  fs_method:   {config.fs_method}\n"
@@ -153,7 +209,15 @@ def selector_and_config_from_string(*, preprocessing_name: str):
 
     max_features_fn = partial(_get_budget_feature_count, b=config.total_budget, idx=config.budget_index)
     selector_cls = get_feature_selector_from_name(name=config.fs_method)
-    return selector_cls(max_features=max_features_fn, proxy_mode_config=proxy_mode_config), config
+    return (
+        selector_cls(
+            max_features=max_features_fn,
+            proxy_mode_config=proxy_mode_config,
+            skip_random_fallback=skip_random_fallback,
+            encoding_permutation_seed=encoding_permutation_seed,
+        ),
+        config,
+    )
 
 
 def apply_fs_bench_preprocessing(*, preprocessing_name: str, experiment):
