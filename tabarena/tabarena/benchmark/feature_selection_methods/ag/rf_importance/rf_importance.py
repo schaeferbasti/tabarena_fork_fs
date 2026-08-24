@@ -25,6 +25,6 @@ class RFImportanceFeatureSelector(AbstractFeatureSelector):
 
         rf_class = RandomForestRegressor if self.problem_type == "regression" else RandomForestClassifier
         rf_model = rf_class(random_state=self.random_state, n_jobs=-1)
-        rf_model.fit(X, y)
+        rf_model.fit(X_pre, y)
 
         return dict(zip(X_pre.columns, rf_model.feature_importances_))

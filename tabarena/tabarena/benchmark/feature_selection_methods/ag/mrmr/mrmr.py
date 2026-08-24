@@ -25,7 +25,7 @@ class mRMRFeatureSelector(AbstractITFeatureSelector):  # noqa: N801
     name = "mRMRFeatureSelector"
     feature_scoring_method: bool = False
 
-    def _fit_feature_selection(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> list[str]:
+    def _fit_feature_selection(self, *, X: pd.DataFrame, y: pd.Series, time_limit: int | None = None) -> list[dict]:
         """
         At each step, select the candidate that maximizes:
             score(X_i) = I(X_i; Y) - (1/|F|) * sum_{X_j in F} I(X_i; X_j)
@@ -54,6 +54,7 @@ class mRMRFeatureSelector(AbstractITFeatureSelector):  # noqa: N801
         first = int(np.argmax(relevance))
         selected.append(first)
         selected_mask[first] = True
+        values: list[float] = [float(relevance[first])]  # criterion value at selection (first: plain relevance)
 
         # step 2: greedy forward with mrmr criterion
         while len(selected) < self.max_features:
@@ -77,5 +78,9 @@ class mRMRFeatureSelector(AbstractITFeatureSelector):  # noqa: N801
                 break
             selected.append(best_idx)
             selected_mask[best_idx] = True
+            values.append(float(best_score))  # mRMR criterion value at selection
 
-        return [str(self._original_features[i]) for i in selected]
+        return [
+            {"feature": str(self._original_features[i]), "value": v}
+            for i, v in zip(selected, values)
+        ]

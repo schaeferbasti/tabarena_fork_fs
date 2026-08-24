@@ -12,5 +12,6 @@ class RandomFeatureSelector(AbstractFeatureSelector):
 
     name = "RandomFeatureSelector"
 
-    def _fit_feature_selection(self, **kwargs) -> list[str]:  # noqa: ARG002
+    def _fit_feature_selection(self, **kwargs) -> list[dict[str, float | None]]:  # noqa: ARG002
+        # Every pick comes from the random fallback -> all values are None.
         return self.fallback_feature_selection()
