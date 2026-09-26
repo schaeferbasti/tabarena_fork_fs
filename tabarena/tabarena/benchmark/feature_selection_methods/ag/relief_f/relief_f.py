@@ -36,7 +36,7 @@ class ReliefFFeatureSelector(AbstractFeatureSelector):
         ).to_numpy()
 
         X_pre, _ = self._preprocess(X, impute=True, encode_ordinal=True)
-        X_arr = self._minmax_scale(X_pre.to_numpy())
+        X_arr = self._minmax_scale(X_pre.to_numpy(dtype=float))
         y_arr = np.asarray(y)
         columns = list(X_pre.columns)
 

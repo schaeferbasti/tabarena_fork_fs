@@ -158,3 +158,11 @@ autogluon/
 /examples/**/*.zip
 
 /tmp_scripts/
+.pkl
+
+# AutoGluon training artifacts + pickles (anywhere in the repo)
+AutogluonModels/
+*.pkl
+
+/tabflow_slurm/*.json
+/tabflow_slurm/*.yaml

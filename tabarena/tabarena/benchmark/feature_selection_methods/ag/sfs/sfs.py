@@ -27,10 +27,12 @@ class SequentialForwardSelectionFeatureSelector(AbstractFeatureSelector):
     ) -> list[str]:
         start_time = time.monotonic()
         current_features = []
+        values = []  # marginal proxy-score gain when each feature was added (its "value")
+        prev_score = 0.0
 
         if self.max_features >= len(self._original_features): # trivial case
-            return [str(f) for f in self._original_features]
-        
+            return [{"feature": str(f), "value": float("nan")} for f in self._original_features]
+
         available_features = self._original_features.copy()
 
         try: # safeguard for AG model throwing a TimeExceededlimit error that would reset the already selected feature set 
@@ -66,8 +68,13 @@ class SequentialForwardSelectionFeatureSelector(AbstractFeatureSelector):
 
                 current_features.append(best_feature)
                 available_features.remove(best_feature)
+                values.append(best_score - prev_score)  # marginal gain from adding this feature
+                prev_score = best_score
 
         except TimeLimitExceeded:
             self._log(30, f"TimeLimitExceeded during selection. Returning {len(current_features)} selected features.")
 
-        return [str(feat) for feat in current_features]
+        return [
+            {"feature": str(f), "value": float(v)}
+            for f, v in zip(current_features, values)
+        ]

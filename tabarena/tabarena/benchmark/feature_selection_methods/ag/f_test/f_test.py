@@ -9,7 +9,7 @@ from sklearn.feature_selection import SelectKBest, f_classif, f_regression
 from tabarena.benchmark.feature_selection_methods.abstract.abstract_feature_selector import AbstractFeatureSelector
 
 
-class ANOVAFeatureSelector(AbstractFeatureSelector):
+class FTestFeatureSelector(AbstractFeatureSelector):
     """ANOVA Feature Selection.
 
     Reference: St, Lars, and Svante Wold. "Analysis of variance(ANOVA)." 
@@ -17,7 +17,7 @@ class ANOVAFeatureSelector(AbstractFeatureSelector):
     Implementation Source: https://scikit-learn.org/stable/modules/generated/sklearn.feature_selection.f_classif.html
     """
 
-    name = "ANOVAFeatureSelector"
+    name = "FTestFeatureSelector"
     feature_scoring_method: bool = True
 
     def _fit_feature_scoring(

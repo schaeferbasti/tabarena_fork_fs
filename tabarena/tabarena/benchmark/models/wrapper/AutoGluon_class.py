@@ -184,12 +184,17 @@ class AGWrapper(AbstractExecModel):
                         "method_type": generator.name,
                         "feature_scoring_method": generator.feature_scoring_method,
                         "original_feature_names": generator._original_features,
-                        "selected_feature_names": generator._selected_features,
+                        "selected_feature_names": (
+                            [entry["feature"] for entry in generator._selected_features]
+                            if generator._selected_features is not None else None
+                        ),
+                        "selected_features": generator._selected_features,
+                        "random_feature_names": generator._feature_selection_random_features,
                         "feature_scores": generator._feature_scores,
                         "max_features": generator.max_features,
                         "max_features_input": generator.max_features_input,
                         "feature_selection_fit_time": generator._feature_selection_fit_time,
-                        "feature_selection_time_limit": generator._feature_selection_time_limit
+                        "feature_selection_time_limit": generator._feature_selection_time_limit,
                     }
 
         return results

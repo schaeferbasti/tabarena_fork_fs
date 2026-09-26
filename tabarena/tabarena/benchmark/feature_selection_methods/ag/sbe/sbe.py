@@ -33,7 +33,7 @@ class SequentialBackwardEliminationFeatureSelector(AbstractFeatureSelector):
         current_features = self._original_features.copy()
 
         if self.max_features >= len(self._original_features): # trivial case
-            return [str(f) for f in self._original_features]
+            return  [{"feature": str(feat), "value": float("nan")} for feat in self._original_features]
         
         try: # safeguard for AG model throwing a TimeExceededlimit error that would reset the already selected feature set 
             while len(current_features) > self.max_features and current_features:
@@ -70,4 +70,6 @@ class SequentialBackwardEliminationFeatureSelector(AbstractFeatureSelector):
         except TimeLimitExceeded:
             self._log(30, f"TimeLimitExceeded during elimination. Returning {len(current_features)} selected features.")
 
-        return [str(feat) for feat in current_features]
+        # Backward elimination exposes no natural per-feature value for the survivors -> NaN
+        # (they were selected by the method, unlike random-fallback fills which are None).
+        return [{"feature": str(feat), "value": float("nan")} for feat in current_features]

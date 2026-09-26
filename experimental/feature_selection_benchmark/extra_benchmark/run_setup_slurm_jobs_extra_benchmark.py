@@ -76,19 +76,27 @@ def build_jobs():
         for method_name in method_names:
             for task_id in task_ids:
                 if mode == "validity":
-                    jobs.append(
-                        ExtraBenchmarkJob(
-                            mode=mode,
-                            method_name=method_name,
-                            data_foundry_task_id=task_id,
-                        )
-                    )
+                    for noise in noises:
+                        for noise_type in noise_types:
+                            jobs.append(
+                                ExtraBenchmarkJob(
+                                    mode=mode,
+                                    method_name=method_name,
+                                    data_foundry_task_id=task_id,
+                                    repeat=method_name.removesuffix("__nofallback").split("__")[-3],
+                                    noise=noise,
+                                    noise_type=noise_type,
+                                )
+                            )
                 else:
                     jobs.append(
                         ExtraBenchmarkJob(
                             mode=mode,
                             method_name=method_name,
                             data_foundry_task_id=task_id,
+                            repeat=method_name.removesuffix("__nofallback").split("__")[-3],
+                            noise=None,
+                            noise_type=None,
                         )
                     )
     return jobs
