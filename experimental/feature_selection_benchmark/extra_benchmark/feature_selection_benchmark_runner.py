@@ -178,12 +178,12 @@ def run_extra_benchmark_job(base_job: ExtraBenchmarkJob) -> Path | None:
     all_results = []
 
     if base_job.mode == "stability":
-        ### CHANGED: Defines the total runs (30) and filters out what is already done
-        target_repeats = set(range(30))
+        ### CHANGED: Defines the total runs (25) and filters out what is already done
+        target_repeats = set(range(25))
         missing_repeats = sorted(list(target_repeats - existing_repeats))
 
         if not missing_repeats:
-            print(f"All 30 stability repeats already exist in {cache_path}. Skipping.")
+            print(f"All 25 stability repeats already exist in {cache_path}. Skipping.")
             return None
 
         print(f"Running stability benchmark (executing {len(missing_repeats)} missing repetitions)...")
@@ -191,6 +191,8 @@ def run_extra_benchmark_job(base_job: ExtraBenchmarkJob) -> Path | None:
             current_job = replace(base_job, repeat=rep)
             print(f"  -> Executing repeat {rep}...")
             result = run_benchmark(current_job)
+            save_results(base_job, [result])
+            print(f"  -> Saved repeat {rep} to {cache_path}")
             all_results.append(result)
 
     elif base_job.mode == "validity":
@@ -207,6 +209,8 @@ def run_extra_benchmark_job(base_job: ExtraBenchmarkJob) -> Path | None:
             current_job = replace(base_job, noise=noise_val)
             print(f"  -> Executing with noise {noise_val}...")
             result = run_benchmark(current_job)
+            save_results(base_job, [result])
+            print(f"  -> Saved noise {noise_val} to {cache_path}")
             all_results.append(result)
 
     if all_results:
